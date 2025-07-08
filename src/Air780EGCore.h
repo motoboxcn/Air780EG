@@ -17,7 +17,6 @@ private:
     unsigned long at_command_delay = 100; // AT指令间最小间隔
     
     bool initialized = false;
-    int reset_pin = -1;
     int power_pin = -1;
     
     // URC管理器
@@ -25,6 +24,8 @@ private:
     
     // 内部方法
     void clearSerialBuffer();
+    bool initModem();
+    bool isAtReady();
     String readResponse(unsigned long timeout);
     String readLine(); // 读取一行数据
     
@@ -33,8 +34,7 @@ public:
     ~Air780EGCore();
     
     // 初始化和配置
-    bool begin(HardwareSerial* ser, int baudrate = 115200);
-    bool begin(HardwareSerial* ser, int baudrate, int reset_pin, int power_pin = -1);
+    bool begin(HardwareSerial* ser, int baudrate, int rx_pin, int tx_pin, int power_pin);
     
     // 主循环 - 处理URC消息
     void loop();
@@ -46,7 +46,6 @@ public:
     
     // 模块控制
     bool isReady();
-    void reset();
     void powerOn();
     void powerOff();
     
@@ -61,6 +60,9 @@ public:
     // 状态查询
     bool isInitialized() const;
     HardwareSerial* getSerial() const;
+
+    // getCSQ
+    int getCSQ();
     
     // 调试方法
     void enableEcho(bool enable = true);

@@ -2,6 +2,8 @@
 
 const char* Air780EG::TAG = "Air780EG";
 
+Air780EG air780eg;
+
 Air780EG::Air780EG() : network(&core), gnss(&core) {
     AIR780EG_LOGI(TAG, "Air780EG library v%s initialized", AIR780EG_VERSION_STRING);
 }
@@ -10,15 +12,11 @@ Air780EG::~Air780EG() {
     // 析构函数
 }
 
-bool Air780EG::begin(HardwareSerial* serial, int baudrate) {
-    return begin(serial, baudrate, -1, -1);
-}
-
-bool Air780EG::begin(HardwareSerial* serial, int baudrate, int reset_pin, int power_pin) {
+bool Air780EG::begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pin, int power_pin) {
     AIR780EG_LOGI(TAG, "Initializing Air780EG module...");
     
     // 初始化核心模块
-    if (!core.begin(serial, baudrate, reset_pin, power_pin)) {
+    if (!core.begin(serial, baudrate, rx_pin, tx_pin, power_pin)) {
         AIR780EG_LOGE(TAG, "Failed to initialize core module");
         return false;
     }
@@ -85,6 +83,7 @@ void Air780EG::setupURCHandlers() {
 
 void Air780EG::loop() {
     if (!initialized) {
+        AIR780EG_LOGI(TAG, "Air780EG module not initialized");
         return;
     }
     
@@ -112,8 +111,11 @@ bool Air780EG::isReady() {
 void Air780EG::reset() {
     AIR780EG_LOGI(TAG, "Resetting Air780EG module...");
     
-    // 重置核心模块
-    core.reset();
+    // 发送重启命令
+    core.sendATCommand("AT+CFUN=1,1", 5000);
+    
+    // 等待模块重启
+    delay(3000);
     
     // 重置状态
     initialized = core.isInitialized();

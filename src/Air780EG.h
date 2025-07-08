@@ -38,8 +38,7 @@ public:
     ~Air780EG();
     
     // 初始化方法
-    bool begin(HardwareSerial* serial, int baudrate = 115200);
-    bool begin(HardwareSerial* serial, int baudrate, int reset_pin, int power_pin = -1);
+    bool begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pin, int power_pin);
     
     // 主循环 - 必须在loop()中调用
     void loop();
@@ -75,5 +74,7 @@ public:
     // 综合状态显示
     void printStatus();
 };
+
+extern Air780EG air780eg;
 
 #endif // AIR780EG_H
