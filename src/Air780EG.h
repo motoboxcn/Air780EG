@@ -10,6 +10,7 @@
 #include "Air780EGNetwork.h"
 #include "Air780EGGNSS.h"
 #include "Air780EGURC.h"
+#include "Air780EGMQTT.h"
 
 // 版本信息
 #define AIR780EG_VERSION_MAJOR 1
@@ -25,6 +26,7 @@ private:
     Air780EGNetwork network;
     Air780EGGNSS gnss;
     Air780EGURC urc_manager;
+    Air780EGMQTT mqtt;
     
     bool initialized = false;
     unsigned long last_loop_time = 0;
@@ -48,10 +50,11 @@ public:
     Air780EGNetwork& getNetwork() { return network; }
     Air780EGGNSS& getGNSS() { return gnss; }
     Air780EGURC& getURCManager() { return urc_manager; }
+    Air780EGMQTT& getMQTT() { return mqtt; }
     
     // 便捷方法
     bool isReady();
-    void reset();
+    // void reset();
     void powerOn();
     void powerOff();
     

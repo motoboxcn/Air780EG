@@ -4,7 +4,7 @@ const char* Air780EG::TAG = "Air780EG";
 
 Air780EG air780eg;
 
-Air780EG::Air780EG() : network(&core), gnss(&core) {
+Air780EG::Air780EG() : network(&core), gnss(&core), mqtt(&core) {
     AIR780EG_LOGI(TAG, "Air780EG library v%s initialized", AIR780EG_VERSION_STRING);
 }
 
@@ -38,7 +38,6 @@ bool Air780EG::begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pi
     
     initialized = true;
     AIR780EG_LOGI(TAG, "Air780EG module initialized successfully");
-    
     return true;
 }
 
@@ -102,30 +101,14 @@ void Air780EG::loop() {
     // 调用各子模块的loop方法
     network.loop();
     gnss.loop();
+    mqtt.loop();
+    // HTTP模块通常不需要循环处理，因为它是同步的
 }
 
 bool Air780EG::isReady() {
     return initialized && core.isReady();
 }
 
-void Air780EG::reset() {
-    AIR780EG_LOGI(TAG, "Resetting Air780EG module...");
-    
-    // 发送重启命令
-    core.sendATCommand("AT+CFUN=1,1", 5000);
-    
-    // 等待模块重启
-    delay(3000);
-    
-    // 重置状态
-    initialized = core.isInitialized();
-    
-    if (initialized) {
-        AIR780EG_LOGI(TAG, "Module reset successfully");
-    } else {
-        AIR780EG_LOGE(TAG, "Module reset failed");
-    }
-}
 
 void Air780EG::powerOn() {
     AIR780EG_LOGI(TAG, "Powering on Air780EG module...");

@@ -5,6 +5,20 @@
 #include "Air780EGCore.h"
 #include "Air780EGDebug.h"
 
+/*
+https://docs.openluat.com/air780eg/at/app/at_command/#gps
+只有这几个功能
+GPS相关命令
+AT+CGNSPWRGPS 开关
+AT+CGNSINF读取 GNSS 信息
+AT+CGNSURC打开 GNSS URC 上报
+AT+CGNSTST将读取到的 GNSS 数据发送到 AT 口
+AT+CGNSCMD给 GNSS 发送控制命令
+AT+CGNSAID设置辅助定位
+AT+CGNSDEL删除 EPO 文件
+AT+CGNSSEQ定义 NMEA 解析
+*/
+
 class Air780EGGNSS {
 private:
     static const char* TAG;
@@ -26,16 +40,13 @@ private:
         unsigned long last_update;
         bool data_valid;
     } gnss_data;
-    
-    unsigned long gnss_update_interval = 1000; // 1Hz默认
+    unsigned long gnss_update_interval = 500; // 500ms
     unsigned long last_loop_time = 0;
     bool gnss_enabled = false;
-    float update_frequency = 1.0; // Hz
     
     // 内部方法
     void updateGNSSData();
     bool parseGNSSResponse(const String& response);
-    double convertCoordinate(const String& coord, const String& direction);
     
 public:
     Air780EGGNSS(Air780EGCore* core_instance);
@@ -56,15 +67,6 @@ public:
     float getHDOP();
     String getTimestamp();
     String getDate();
-    
-    // GNSS配置
-    bool setGNSSMode(int mode = 1); // 0=关闭, 1=GPS, 2=北斗, 3=GPS+北斗
-    bool setUpdateRate(int rate_ms = 1000);
-    
-    // 配置更新频率
-    void setUpdateFrequency(float hz); // 支持0.1Hz到10Hz
-    float getUpdateFrequency() const;
-    
     // 状态查询
     bool isEnabled() const;
     bool isDataValid() const;

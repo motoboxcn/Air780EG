@@ -34,16 +34,6 @@ bool Air780EGGNSS::enableGNSS() {
     
     delay(1000);
     
-    // 设置GNSS模式 (GPS + 北斗)
-    if (!setGNSSMode(3)) {
-        AIR780EG_LOGW(TAG, "Failed to set GNSS mode, using default");
-    }
-    
-    // 设置更新频率
-    if (!setUpdateRate(gnss_update_interval)) {
-        AIR780EG_LOGW(TAG, "Failed to set update rate, using default");
-    }
-    
     gnss_enabled = true;
     AIR780EG_LOGI(TAG, "GNSS enabled successfully");
     
@@ -197,52 +187,6 @@ bool Air780EGGNSS::parseGNSSResponse(const String& response) {
     return field_count >= 12; // 至少解析到卫星数量字段
 }
 
-bool Air780EGGNSS::setGNSSMode(int mode) {
-    String cmd = "AT+CGNSCFG=\"MODE\"," + String(mode);
-    bool result = core->sendATCommandBool(cmd);
-    
-    if (result) {
-        AIR780EG_LOGD(TAG, "GNSS mode set to %d", mode);
-    } else {
-        AIR780EG_LOGE(TAG, "Failed to set GNSS mode to %d", mode);
-    }
-    
-    return result;
-}
-
-bool Air780EGGNSS::setUpdateRate(int rate_ms) {
-    String cmd = "AT+CGNSCFG=\"RATE\"," + String(rate_ms);
-    bool result = core->sendATCommandBool(cmd);
-    
-    if (result) {
-        AIR780EG_LOGD(TAG, "GNSS update rate set to %d ms", rate_ms);
-    } else {
-        AIR780EG_LOGE(TAG, "Failed to set GNSS update rate to %d ms", rate_ms);
-    }
-    
-    return result;
-}
-
-void Air780EGGNSS::setUpdateFrequency(float hz) {
-    if (hz < 0.1) hz = 0.1;
-    if (hz > 10.0) hz = 10.0;
-    
-    update_frequency = hz;
-    gnss_update_interval = (unsigned long)(1000.0 / hz);
-    
-    AIR780EG_LOGD(TAG, "Update frequency set to %.1f Hz (%lu ms interval)", 
-                 hz, gnss_update_interval);
-    
-    // 如果GNSS已启用，更新硬件设置
-    if (gnss_enabled) {
-        setUpdateRate(gnss_update_interval);
-    }
-}
-
-float Air780EGGNSS::getUpdateFrequency() const {
-    return update_frequency;
-}
-
 bool Air780EGGNSS::isFixed() {
     return gnss_data.data_valid && gnss_data.is_fixed;
 }
@@ -307,7 +251,6 @@ void Air780EGGNSS::printGNSSInfo() {
     AIR780EG_LOGI(TAG, "HDOP: %.2f", gnss_data.hdop);
     AIR780EG_LOGI(TAG, "Date: %s", gnss_data.date.c_str());
     AIR780EG_LOGI(TAG, "Time: %s", gnss_data.timestamp.c_str());
-    AIR780EG_LOGI(TAG, "Update Freq: %.1f Hz", update_frequency);
     AIR780EG_LOGI(TAG, "Last Update: %lu ms ago", millis() - gnss_data.last_update);
     AIR780EG_LOGI(TAG, "======================");
 }

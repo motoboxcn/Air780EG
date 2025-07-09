@@ -74,6 +74,13 @@ bool Air780EGCore::isAtReady()
     // 使用原始的命令确认是否有返回
     serial->println("AT");
     String response = readResponse(1000);
+    // 处理response boot.rom 还在初始化时候等待
+    if (response.indexOf("boot.rom") >= 0)
+    {
+        AIR780EG_LOGI(TAG, "boot.rom还在初始化,等待...");
+        delay(1000);
+        return false;
+    }
     return response.indexOf("OK") >= 0;
 }
 
@@ -115,21 +122,21 @@ bool Air780EGCore::initModem()
     }
 
     // 检查信号强度
-    int csqRetry = 0;
-    int csq = -1;
-    do
-    {
-        csq = getCSQ();
-        if (csq >= 5)
-            break;
-        delay(1000);
-        csqRetry++;
-    } while (csqRetry < 5);
-    if (csq < 5)
-    {
-        AIR780EG_LOGE(TAG, "信号太弱，无法注册网络");
-        return false;
-    }
+    // int csqRetry = 0;
+    // int csq = -1;
+    // do
+    // {
+    //     csq = getCSQ();
+    //     if (csq >= 5)
+    //         break;
+    //     delay(1000);
+    //     csqRetry++;
+    // } while (csqRetry < 5);
+    // if (csq < 5)
+    // {
+    //     AIR780EG_LOGE(TAG, "信号太弱，无法注册网络");
+    //     return false;
+    // }
 
     // 激活PDP上下文
     if (!sendATCommandWithResponse("AT+MIPCALL?", "OK", 5000))
@@ -149,13 +156,25 @@ void Air780EGCore::loop()
         return;
     }
 
-    // 处理接收到的数据，传递给URC管理器
+    // 处理接收到的数据，仅将URC特征的行传递给URC管理器
     while (serial->available())
     {
         String line = readLine();
         if (line.length() > 0 && urc_manager)
         {
-            urc_manager->processLine(line);
+            // 只处理具有URC特征的行
+            if (line.startsWith("+") ||
+                line.startsWith("RING") ||
+                line.startsWith("NO CARRIER") ||
+                line.startsWith("CMTI") ||
+                line.startsWith("CLIP") ||
+                line.startsWith("CGEV") ||
+                line.startsWith("CMS ERROR") ||
+                line.startsWith("CME ERROR"))
+            {
+                urc_manager->processLine(line);
+            }
+            // 其他普通AT响应行不处理
         }
     }
 }

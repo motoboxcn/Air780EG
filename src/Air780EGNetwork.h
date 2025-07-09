@@ -45,7 +45,7 @@ public:
     
     // 获取缓存的网络信息
     bool isNetworkRegistered();
-    int getSignalStrength();
+    int getSignalStrength(); // 获取信号强度
     String getOperatorName();
     String getNetworkType();
     String getIMEI();
