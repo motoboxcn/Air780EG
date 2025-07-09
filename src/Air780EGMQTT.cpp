@@ -26,17 +26,33 @@ bool Air780EGMQTT::begin() {
         return false;
     }
     
-    // 设置MQTT消息格式为文本模式
-    if (!sendATCommand("AT+MQTTMODE=0", "OK", 3000)) {
-        AIR780EG_LOGW(TAG, "Failed to set MQTT text mode");
-    }
+    
     
     AIR780EG_LOGI(TAG, "MQTT module initialized");
     return true;
 }
 
+/*
+AT+MCONFIG=868488076771714,root,luat123456              //填写clientid、用户名、密码；可以带引号可以不带
+
+OK
+
+AT+MIPSTART="airtest.openluat.com","1883"               //填写mqtt服务器的域名和端口号；注意，如果是无证书ssl加密连接时，指令格式需要换成 AT+SSLMIPSTART=<svraddr>,<port>
+
+OK
+ */
 void Air780EGMQTT::setConfig(const Air780EGMQTTConfig& cfg) {
     config = cfg;
+    // 设置MQTT消息格式为HEX模式
+    if (!sendATCommand("AT+MQTTMODE=1", "OK", 3000)) {
+        AIR780EG_LOGW(TAG, "Failed to set MQTT text mode");
+    }
+    // 设置MQTT连接参数
+    if (!sendATCommand("AT+MCONFIG=\"" + config.client_id + "\",\"" + config.username + "\",\"" + config.password + "\"", "OK", 3000)) {
+        AIR780EG_LOGW(TAG, "Failed to set MQTT config");
+    }
+    
+
     AIR780EG_LOGD(TAG, "Configuration updated");
 }
 
@@ -63,20 +79,22 @@ bool Air780EGMQTT::connect(const String& server, int port, const String& client_
         AIR780EG_LOGW(TAG, "Already connected or connecting");
         return state == MQTT_CONNECTED;
     }
-    
+    // 断开现有连接,否则会连接失败
+    while (!disconnect())
+    {
+        delay(1000);
+    }
+
+    // 设置TCP连接参数
+    // 建立mqtt会话；注意需要返回CONNECT OK后才能发此条指令，并且要立即发，否则就会被服务器踢掉 报错 767 操作失败
+    if (!sendATCommand("AT+MIPSTART=\"" + config.server + "\",\"" + String(config.port) + "\"", "OK", 3000)) {
+        AIR780EG_LOGW(TAG, "Failed to set MQTT IP start");
+    }
+
     state = MQTT_CONNECTING;
     AIR780EG_LOGI(TAG, "Connecting to MQTT server");
-    
-    // 构建MQTT连接命令
-    String connect_cmd = "AT+MCONNECT=1,60";
-    if (!username.isEmpty()) {
-        connect_cmd += ",\"" + client_id + "\",\"" + username + "\",\"" + password + "\"";
-    } else {
-        connect_cmd += ",\"" + client_id + "\"";
-    }
-    
     // 发送连接命令
-    if (!sendATCommand(connect_cmd, "OK", 5000)) {
+    if (!sendATCommand("AT+MCONNECT=1,60", "OK", 5000)) {
         AIR780EG_LOGE(TAG, "MQTT connect command failed");
         state = MQTT_ERROR;
         return false;
@@ -141,6 +159,13 @@ bool Air780EGMQTT::setSSLConfig(const String& ca_cert, const String& client_cert
     return true;
 }
 
+/*
+AT+MPUB="mqtt/sub",0,0,"data from 4G module"        //发布主题
+
+OK
+
++MSUB: "mqtt/pub",20 byte,data from tcp server          //收到服务器下发的消息，+MSUB的URC上报
+*/
 bool Air780EGMQTT::publish(const String& topic, const String& payload, int qos, bool retain) {
     if (!isConnected()) {
         AIR780EG_LOGE(TAG, "Not connected to MQTT server");
@@ -163,6 +188,13 @@ bool Air780EGMQTT::publishJSON(const String& topic, const String& json, int qos)
     return publish(topic, json, qos, false);
 }
 
+/*
+AT+MSUB="mqtt/pub",0        //订阅主题
+
+OK
+
+SUBACK
+*/
 bool Air780EGMQTT::subscribe(const String& topic, int qos) {
     if (!isConnected()) {
         AIR780EG_LOGE(TAG, "Not connected to MQTT server");

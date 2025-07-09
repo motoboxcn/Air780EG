@@ -8,7 +8,7 @@
 
 // URC消息类型枚举
 enum class URCType {
-    NETWORK_REGISTRATION,   // +CREG, +CGREG
+    NETWORK_REGISTRATION,   // +CREG, +CGREG, +CEREG
     SIGNAL_QUALITY,        // +CSQ
     GNSS_INFO,            // +UGNSINF, +CGNSINF
     MQTT_MESSAGE,         // +MSUB

@@ -26,6 +26,7 @@ private:
     void clearSerialBuffer();
     bool initModem();
     bool isAtReady();
+    bool isNetworkReadyCheck();
     String readResponse(unsigned long timeout);
     String readLine(); // 读取一行数据
     

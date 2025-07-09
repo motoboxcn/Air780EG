@@ -1,0 +1,47 @@
+AT+CGREG?               //查询当前GPRS注册状态
+
++CGREG: 0,1             //<stat>=1，标识已经注册GPRS网络，而且是本地网
+
+OK
+
+AT+CGATT?               //查看当前GPRS附着状态
+
++CGATT: 1               //<state>=1，标明当前GPRS已经附着
+
+OK
+
+AT+MCONFIG=868488076771714,root,luat123456              //填写clientid、用户名、密码；可以带引号可以不带
+OK
+
+AT+MIPSTART="airtest.openluat.com","1883"               //填写mqtt服务器的域名和端口号；注意，如果是无证书ssl加密连接时，指令格式需要换成 AT+SSLMIPSTART=<svraddr>,<port>
+
+AT+MIPSTART="222.186.32.152","32571"
+OK
+
+CONNECT OK
+
+AT+MCONNECT=1,60                //建立mqtt会话；注意需要返回CONNECT OK后才能发此条指令，并且要立即发，否则就会被服务器踢掉
+
+OK
+
+CONNACK OK                  //连接成功，成功后才能发布消息或者订阅消息
+
+AT+MSUB="mqtt/pub",0        //订阅主题
+
+OK
+
+SUBACK
+
+AT+MPUB="mqtt/sub",0,0,"data from 4G module"        //发布主题
+
+OK
+
++MSUB: "mqtt/pub",20 byte,data from tcp server          //收到服务器下发的消息，+MSUB的URC上报
+
+AT+MDISCONNECT              //模块需要先关闭mqtt连接
+
+OK
+
+AT+MIPCLOSE                 //关闭tcp连接
+
+OK

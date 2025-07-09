@@ -136,6 +136,7 @@ std::vector<String> Air780EGURC::parseParameters(const String& data, const Strin
 void Air780EGURC::onNetworkRegistration(URCHandler handler) {
     registerHandler("+CREG:", URCType::NETWORK_REGISTRATION, handler, "Network Registration");
     registerHandler("+CGREG:", URCType::NETWORK_REGISTRATION, handler, "GPRS Registration");
+    registerHandler("+CEREG:", URCType::NETWORK_REGISTRATION, handler, "Network Registration");
 }
 
 void Air780EGURC::onSignalQuality(URCHandler handler) {

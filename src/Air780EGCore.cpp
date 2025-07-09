@@ -32,13 +32,14 @@ bool Air780EGCore::begin(HardwareSerial *ser, int baudrate, int rx_pin, int tx_p
         delay(100);
         digitalWrite(power_pin, HIGH);
         delay(2000); // 等待模块启动
-        
+
         AIR780EG_LOGD(TAG, "Power pin configured: %d", power_pin);
         // 只有当power_pin有效时才初始化串口（表示由库管理）
         serial->begin(baudrate, SERIAL_8N1, rx_pin, tx_pin);
-    }else{
+    }
+    else
+    {
         AIR780EG_LOGD(TAG, "Power pin not configured, serial should be initialized externally");
-        // power_pin为-1表示外部已经管理EN引脚和串口初始化，不需要返回false
     }
     delay(1000); // 等待模块稳定
     // 清空缓冲区
@@ -66,7 +67,6 @@ bool Air780EGCore::begin(HardwareSerial *ser, int baudrate, int rx_pin, int tx_p
     }
     AIR780EG_LOGI(TAG, "Module initModem successfully");
     return true;
-
 }
 
 bool Air780EGCore::isAtReady()
@@ -84,7 +84,6 @@ bool Air780EGCore::isAtReady()
     return response.indexOf("OK") >= 0;
 }
 
-
 bool Air780EGCore::initModem()
 {
     delay(2000);
@@ -96,7 +95,7 @@ bool Air780EGCore::initModem()
         return false;
     }
 
-    // 启用网络注册状态主动上报
+    // // 启用网络注册状态主动上报
     if (!sendATCommandBool("AT+CEREG=1"))
     {
         AIR780EG_LOGE(TAG, "设置CEREG失败");
@@ -120,34 +119,69 @@ bool Air780EGCore::initModem()
         AIR780EG_LOGE(TAG, "SIM卡 PIN 码未就绪");
         return false;
     }
+    AIR780EG_LOGI(TAG, "SIM卡 PIN 码就绪");
 
-    // 检查信号强度
-    // int csqRetry = 0;
-    // int csq = -1;
-    // do
-    // {
-    //     csq = getCSQ();
-    //     if (csq >= 5)
-    //         break;
-    //     delay(1000);
-    //     csqRetry++;
-    // } while (csqRetry < 5);
-    // if (csq < 5)
-    // {
-    //     AIR780EG_LOGE(TAG, "信号太弱，无法注册网络");
-    //     return false;
-    // }
-
-    // 激活PDP上下文
-    if (!sendATCommandWithResponse("AT+MIPCALL?", "OK", 5000))
+    // 检查信号强度 - 移到GPRS附着前检查
+    int csqRetry = 0;
+    do
     {
-        AIR780EG_LOGE(TAG, "激活PDP上下文失败");
+        int csq = getCSQ();
+        if (csq >= 2 && csq != 99) // 降低阈值，排除无效值
+            break;
+        delay(500);
+        csqRetry++;
+    } while (csqRetry < 5);
+    if (csqRetry >= 5)
+    {
+        AIR780EG_LOGW(TAG, "信号较弱，但继续尝试连接");
+        // 不直接返回失败，允许在弱信号下尝试连接
+    }
+    else
+    {
+        AIR780EG_LOGI(TAG, "信号强度正常");
+    }
+
+    // 检查GPRS附着状态
+    int cgattRetry = 0;
+    do
+    {
+        String response = sendATCommandWithResponse("AT+CGATT?", "OK", 5000);
+        if (response.indexOf("+CGATT: 1") >= 0)
+            break;
+        delay(1000); // GPRS附着也需要更多时间
+        cgattRetry++;
+    } while (cgattRetry < 8); // 增加重试次数
+    if (cgattRetry >= 8)
+    {
+        AIR780EG_LOGE(TAG, "GPRS not attached");
         return false;
+    }
+    AIR780EG_LOGI(TAG, "GPRS附着成功");
+
+    // 等待网络注
+    while (!isNetworkReadyCheck())
+    {
+        AIR780EG_LOGI(TAG, "等待网络注册...");
+        delay(2000);
     }
 
     return true;
 }
 
+bool Air780EGCore::isNetworkReadyCheck()
+{
+
+    String response = sendATCommandWithResponse("AT+CEREG?", "OK", 5000);
+    // 支持本地网络注册(1)和漫游网络注册(5)
+    // 注意：第一个数字是上报模式，第二个数字是注册状态
+    if (response.indexOf("+CEREG: 1,1") >= 0 || response.indexOf("+CEREG: 1,5") >= 0 ||
+        response.indexOf("+CEREG: 0,1") >= 0 || response.indexOf("+CEREG: 0,5") >= 0)
+    {
+        AIR780EG_LOGI(TAG, "网络就绪");
+        return true;
+    }
+    return false;
+}
 
 void Air780EGCore::loop()
 {
@@ -163,14 +197,18 @@ void Air780EGCore::loop()
         if (line.length() > 0 && urc_manager)
         {
             // 只处理具有URC特征的行
-            if (line.startsWith("+") ||
-                line.startsWith("RING") ||
-                line.startsWith("NO CARRIER") ||
-                line.startsWith("CMTI") ||
-                line.startsWith("CLIP") ||
-                line.startsWith("CGEV") ||
-                line.startsWith("CMS ERROR") ||
-                line.startsWith("CME ERROR"))
+            // +UGNSINF:
+            // +CSQ: 99,99 信号强度
+            // MQTT 连接成功：CONNECT OK
+            // MQTT 订阅成功：SUBACK
+            // MQTT 订阅自动打印：+MSUB:
+            // 网络就绪 +CGREG 0,1
+            if (
+                line.startsWith("+UGNSINF:") ||
+                line.startsWith("+MSUB:") ||
+                line.startsWith("CONNECT OK") ||
+                line.startsWith("+CSQ:") ||
+                line.startsWith("+CGREG:"))
             {
                 urc_manager->processLine(line);
             }
@@ -254,7 +292,8 @@ String Air780EGCore::readResponse(unsigned long timeout)
     response.trim();
     response_cache = response;
 
-    AIR780EG_LOGV(TAG, "Response: %s", response.c_str());
+    // 优化日志输出，显示为输出模式
+    AIR780EG_LOGV(TAG, "< %s", response.c_str());
     return response;
 }
 
@@ -273,7 +312,8 @@ String Air780EGCore::sendATCommand(const String &cmd, unsigned long timeout)
         delay(at_command_delay - (current_time - last_at_time));
     }
 
-    AIR780EG_LOGD(TAG, "Sending AT command: %s", cmd.c_str());
+    // 优化日志输出，显示为输入模式
+    AIR780EG_LOGD(TAG, "> %s", cmd.c_str());
 
     // 清空接收缓冲区
     clearSerialBuffer();
@@ -318,6 +358,31 @@ String Air780EGCore::sendATCommandWithResponse(const String &cmd, const String &
     {
         AIR780EG_LOGW(TAG, "Expected response not found. Expected: %s, Got: %s",
                       expected_response.c_str(), response.c_str());
+    }
+
+/*
+765	Invalid input value	无效输入值
+766	Unsupported mode	不支持的模式
+767	Operation failed	操作失败
+768	Mux already running	多路复用已经在运行
+769	Unable to get control	不能获得控制
+*/
+    // 增加一个对结果的解析报错 比如 CME ERROR: 767 标识 操作失败
+    if (response.indexOf("CME ERROR:") >= 0)
+    {
+        int error_code = response.substring(10, 13).toInt();
+        switch (error_code)
+        {
+        case 765:
+            AIR780EG_LOGE(TAG, "无效输入值");
+            break;
+        case 766:
+            AIR780EG_LOGE(TAG, "不支持的模式");
+            break;
+        case 767:
+            AIR780EG_LOGE(TAG, "操作失败");
+            break;
+        }
     }
 
     return response;
@@ -401,7 +466,8 @@ int Air780EGCore::getCSQ()
     String response = sendATCommandWithResponse("AT+CSQ", "OK");
     if (response.indexOf("+CSQ:") >= 0)
     {
-        return response.substring(5, 7).toInt();
+        int csq = response.substring(5, 7).toInt();
+        return csq;
     }
     return -1;
 }
