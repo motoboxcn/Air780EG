@@ -81,15 +81,13 @@ private:
     void handleMQTTURC(const String& urc);
     void processMessageCache();
     bool reconnect();
-    void updateState();
     
 public:
     Air780EGMQTT(Air780EGCore* core_instance);
     ~Air780EGMQTT();
     
     // 初始化和配置
-    bool begin();
-    void setConfig(const Air780EGMQTTConfig& cfg);
+    bool begin(const Air780EGMQTTConfig& cfg);
     Air780EGMQTTConfig getConfig() const;
     
     // 连接管理

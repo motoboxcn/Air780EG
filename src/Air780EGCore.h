@@ -26,7 +26,6 @@ private:
     void clearSerialBuffer();
     bool initModem();
     bool isAtReady();
-    bool isNetworkReadyCheck();
     String readResponse(unsigned long timeout);
     String readLine(); // 读取一行数据
     
@@ -61,6 +60,8 @@ public:
     // 状态查询
     bool isInitialized() const;
     HardwareSerial* getSerial() const;
+    bool isNetworkReadyCheck();
+    bool waitExpectedResponse(const String &expected_response, unsigned long timeout = 10000);
 
     // getCSQ
     int getCSQ();

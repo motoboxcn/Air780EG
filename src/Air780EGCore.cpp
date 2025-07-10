@@ -121,24 +121,69 @@ bool Air780EGCore::initModem()
     }
     AIR780EG_LOGI(TAG, "SIM卡 PIN 码就绪");
 
-    // 检查信号强度 - 移到GPRS附着前检查
-    int csqRetry = 0;
-    do
+    // // 检查信号强度 - 移到GPRS附着前检查
+    // int csqRetry = 0;
+    // do
+    // {
+    //     int csq = getCSQ();
+    //     if (csq >= 2 && csq != 99) // 降低阈值，排除无效值
+    //         break;
+    //     delay(500);
+    //     csqRetry++;
+    // } while (csqRetry < 5);
+    // if (csqRetry >= 5)
+    // {
+    //     AIR780EG_LOGW(TAG, "信号较弱，但继续尝试连接");
+    //     // 不直接返回失败，允许在弱信号下尝试连接
+    // }
+    // else
+    // {
+    //     AIR780EG_LOGI(TAG, "信号强度正常");
+    // }
+
+    // 检查GPRS附着状态
+    // int cgattRetry = 0;
+    // do
+    // {
+    //     String response = sendATCommandWithResponse("AT+CGATT?", "OK", 5000);
+    //     if (response.indexOf("+CGATT: 1") >= 0)
+    //         break;
+    //     delay(1000); // GPRS附着也需要更多时间
+    //     cgattRetry++;
+    // } while (cgattRetry < 8); // 增加重试次数
+    // if (cgattRetry >= 8)
+    // {
+    //     AIR780EG_LOGE(TAG, "GPRS not attached");
+    //     return false;
+    // }
+    // AIR780EG_LOGI(TAG, "GPRS附着成功");
+
+    // 等待网络注
+    // while (!isNetworkReadyCheck())
+    // {
+    //     AIR780EG_LOGI(TAG, "等待网络注册...");
+    //     delay(2000);
+    // }
+
+    return true;
+}
+
+bool Air780EGCore::isNetworkReadyCheck()
+{
+
+
+    String response = sendATCommandWithResponse("AT+CEREG?", "OK", 5000);
+    // 支持本地网络注册(1)和漫游网络注册(5)
+    // 注意：第一个数字是上报模式，第二个数字是注册状态
+    if (response.indexOf("+CEREG: 1,1") >= 0 || response.indexOf("+CEREG: 1,5") >= 0 ||
+        response.indexOf("+CEREG: 0,1") >= 0 || response.indexOf("+CEREG: 0,5") >= 0)
     {
-        int csq = getCSQ();
-        if (csq >= 2 && csq != 99) // 降低阈值，排除无效值
-            break;
-        delay(500);
-        csqRetry++;
-    } while (csqRetry < 5);
-    if (csqRetry >= 5)
-    {
-        AIR780EG_LOGW(TAG, "信号较弱，但继续尝试连接");
-        // 不直接返回失败，允许在弱信号下尝试连接
+        AIR780EG_LOGI(TAG, "网络就绪");
     }
     else
     {
-        AIR780EG_LOGI(TAG, "信号强度正常");
+        AIR780EG_LOGW(TAG, "网络未就绪");
+        return false;
     }
 
     // 检查GPRS附着状态
@@ -158,30 +203,22 @@ bool Air780EGCore::initModem()
     }
     AIR780EG_LOGI(TAG, "GPRS附着成功");
 
-    // 等待网络注
-    while (!isNetworkReadyCheck())
-    {
-        AIR780EG_LOGI(TAG, "等待网络注册...");
-        delay(2000);
-    }
-
     return true;
 }
 
-bool Air780EGCore::isNetworkReadyCheck()
+bool Air780EGCore::waitExpectedResponse(const String &expected_response, unsigned long timeout)
 {
-
-    String response = sendATCommandWithResponse("AT+CEREG?", "OK", 5000);
-    // 支持本地网络注册(1)和漫游网络注册(5)
-    // 注意：第一个数字是上报模式，第二个数字是注册状态
-    if (response.indexOf("+CEREG: 1,1") >= 0 || response.indexOf("+CEREG: 1,5") >= 0 ||
-        response.indexOf("+CEREG: 0,1") >= 0 || response.indexOf("+CEREG: 0,5") >= 0)
+    while (serial->available())
     {
-        AIR780EG_LOGI(TAG, "网络就绪");
-        return true;
+        String line = readLine();
+        if (line.indexOf(expected_response) >= 0)
+        {
+            return true;
+        }
     }
     return false;
 }
+
 
 void Air780EGCore::loop()
 {
@@ -316,7 +353,7 @@ String Air780EGCore::sendATCommand(const String &cmd, unsigned long timeout)
     AIR780EG_LOGD(TAG, "> %s", cmd.c_str());
 
     // 清空接收缓冲区
-    clearSerialBuffer();
+    // clearSerialBuffer();
 
     // 发送AT指令
     serial->println(cmd);
@@ -464,9 +501,11 @@ String Air780EGCore::getLastResponse() const
 int Air780EGCore::getCSQ()
 {
     String response = sendATCommandWithResponse("AT+CSQ", "OK");
-    if (response.indexOf("+CSQ:") >= 0)
-    {
-        int csq = response.substring(5, 7).toInt();
+    // 更准确的解析方法
+    int start_pos = response.indexOf("+CSQ:") + 6; // 跳过 "+CSQ: "
+    int end_pos = response.indexOf(",", start_pos);
+    if (start_pos > 5 && end_pos > start_pos) {
+        int csq = response.substring(start_pos, end_pos).toInt();
         return csq;
     }
     return -1;
