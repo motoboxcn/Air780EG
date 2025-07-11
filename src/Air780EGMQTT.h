@@ -77,6 +77,7 @@ private:
     void handleMQTTURC(const String& urc);
     void processMessageCache();
     bool reconnect();
+    String toHexString(const String& input);
     
 public:
     Air780EGMQTT(Air780EGCore* core_instance);

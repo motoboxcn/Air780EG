@@ -31,10 +31,10 @@ bool Air780EGMQTT::begin(const Air780EGMQTTConfig &cfg)
         return false;
     }
     config = cfg;
-    
+
     // 设置MQTT消息格式为文本模式（0=文本模式，1=HEX模式）
     // 由于我们使用JSON文本格式，应该使用文本模式
-    String response = core->sendATCommandWithResponse("AT+MQTTMODE=0", "OK", 3000);
+    String response = core->sendATCommandWithResponse("AT+MQTTMODE=1", "OK", 3000);
     if (response.indexOf("OK") < 0)
     {
         AIR780EG_LOGW(TAG, "Failed to set MQTT text mode");
@@ -93,8 +93,6 @@ bool Air780EGMQTT::connect(const String &server, int port, const String &client_
 
     // AIR780EG_LOGI(TAG, "Network ready, connecting to MQTT server");
 
-    
-
     // 设置MQTT配置参数
     String config_cmd = "AT+MCONFIG=" + config.client_id + "," + config.username + "," + config.password;
     String response = core->sendATCommandWithResponse(config_cmd, "OK", 3000);
@@ -108,11 +106,19 @@ bool Air780EGMQTT::connect(const String &server, int port, const String &client_
     AIR780EG_LOGI(TAG, "Connecting to MQTT server, client_id: %s, server: %s, port: %d", config.client_id.c_str(), config.server.c_str(), config.port);
     // 设置TCP连接参数
     // 建立mqtt会话；注意需要返回CONNECT OK后才能发此条指令，并且要立即发，否则就会被服务器踢掉 报错 767 操作失败
-     response = core->sendATCommandUntilExpected(
+    response = core->sendATCommandUntilExpected(
         "AT+MIPSTART=\"" + config.server + "\",\"" + String(config.port) + "\"",
-         "CONNECT OK",
-     5000);
-    if (response.indexOf("CONNECT OK") < 0)
+        "CONNECT OK",
+        5000);
+
+    if (response.indexOf("ALREADY CONNECT") >= 0)
+    {
+        AIR780EG_LOGI(TAG, "MQTT already connected");
+        state = MQTT_CONNECTED;
+        return true;
+    }
+
+    if (response.indexOf("CONNECT OK") < 0 && response.indexOf("ALREADY CONNECT") < 0)
     {
         AIR780EG_LOGE(TAG, "Failed to set MQTT IP start");
         state = MQTT_ERROR;
@@ -129,7 +135,7 @@ bool Air780EGMQTT::connect(const String &server, int port, const String &client_
     delay(200);
 
     // 发送连接命令
-     response = core->sendATCommandUntilExpected("AT+MCONNECT=1,60", "CONNACK OK", 5000);
+    response = core->sendATCommandUntilExpected("AT+MCONNECT=1,60", "CONNACK OK", 5000);
     if (response.indexOf("CONNACK OK") < 0)
     {
         AIR780EG_LOGE(TAG, "MQTT connect command failed");
@@ -225,18 +231,13 @@ bool Air780EGMQTT::publish(const String &topic, const String &payload, int qos, 
         return false;
     }
 
-    // 转义payload中的双引号
-    String escaped_payload = payload;
-    escaped_payload.replace("\"", "\\\"");
+    // HEX模式下，payload转为HEX字符串
+    String hex_payload = toHexString(payload);
+    String pub_cmd = "AT+MPUB=\"" + topic + "\"," + String(qos) + "," + String(retain ? 1 : 0) + ",\"" + hex_payload + "\"";
+    AIR780EG_LOGD(TAG, "Publishing HEX: %s", pub_cmd.c_str());
 
-    // 构建发布命令
-    String pub_cmd = "AT+MPUB=\"" + topic + "\"," + String(qos) + "," + String(retain ? 1 : 0) + ",\"" + escaped_payload + "\"";
-
-    AIR780EG_LOGD(TAG, "Publishing: %s", pub_cmd.c_str());
-
-    // 增加延迟，确保连接稳定
     delay(100);
-    
+
     String response = core->sendATCommandUntilExpected(pub_cmd, "OK", 5000);
     if (response.indexOf("OK") >= 0)
     {
@@ -352,6 +353,27 @@ void Air780EGMQTT::loop()
 {
     // processMessageCache();
 
+    // 查询 MQTT 连接状态：AT+MQTTSTATU 5秒一次
+    static unsigned long last_check_time = 0;
+    if (millis() - last_check_time >= 5000)
+    {
+        last_check_time = millis();
+        String response = core->sendATCommandUntilExpected("AT+MQTTSTATU", "OK", 10000);
+        if (response.indexOf("OK") >= 0)
+        {
+            // (0:offline,1:can pub,2: need MCONNECT!)
+            AIR780EG_LOGI(TAG, "MQTT status: %s ", response.c_str());
+            if (response.indexOf("1") >= 0)
+            {
+                state = MQTT_CONNECTED;
+            }
+            else
+            {
+                state = MQTT_DISCONNECTED;
+            }
+        }
+    }
+
     // 处理重连逻辑
     if (state == MQTT_DISCONNECTED || state == MQTT_ERROR)
     {
@@ -420,7 +442,6 @@ void Air780EGMQTT::processMessageCache()
     }
 }
 
-
 bool Air780EGMQTT::reconnect()
 {
     if (config.server.isEmpty())
@@ -487,4 +508,15 @@ void Air780EGMQTT::enableDebug(bool enable)
 void Air780EGMQTT::printConfig() const
 {
     AIR780EG_LOGI(TAG, "MQTT Configuration");
+}
+
+// HEX转换函数
+String Air780EGMQTT::toHexString(const String& input) {
+    String hex = "";
+    for (size_t i = 0; i < input.length(); ++i) {
+        char buf[3];
+        sprintf(buf, "%02x", (unsigned char)input[i]);
+        hex += buf;
+    }
+    return hex;
 }
