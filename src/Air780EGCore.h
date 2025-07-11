@@ -27,6 +27,7 @@ private:
     bool initModem();
     bool isAtReady();
     String readResponse(unsigned long timeout);
+    String readResponseUntilExpected(const String& expected_response,unsigned long timeout);
     String readLine(); // 读取一行数据
     
 public:
@@ -41,6 +42,7 @@ public:
     
     // AT指令交互
     String sendATCommand(const String& cmd, unsigned long timeout = 1000);
+    String sendATCommandUntilExpected(const String& cmd, const String& expected_response, unsigned long timeout = 1000);
     bool sendATCommandBool(const String& cmd, unsigned long timeout = 1000);
     String sendATCommandWithResponse(const String& cmd, const String& expected_response, unsigned long timeout = 3000);
     

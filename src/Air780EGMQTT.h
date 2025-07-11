@@ -56,11 +56,8 @@ private:
     MQTTConnectionCallback connection_callback;
     
     // 状态管理
-    unsigned long last_ping_time = 0;
     unsigned long last_reconnect_attempt = 0;
     unsigned long reconnect_interval = 5000; // 重连间隔
-    int reconnect_attempts = 0;
-    int max_reconnect_attempts = 10;
     
     // 消息缓存
     static const int MAX_CACHED_MESSAGES = 10;
@@ -76,7 +73,6 @@ private:
     int subscription_count = 0;
     
     // 内部方法
-    bool sendATCommand(const String& command, const String& expected_response = "OK", unsigned long timeout = 5000);
     bool waitForURC(const String& urc_prefix, String& response, unsigned long timeout = 10000);
     void handleMQTTURC(const String& urc);
     void processMessageCache();

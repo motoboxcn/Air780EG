@@ -57,6 +57,25 @@ bool Air780EGCore::begin(HardwareSerial *ser, int baudrate, int rx_pin, int tx_p
     AIR780EG_LOGI(TAG, "Module AT ready");
     initialized = true;
 
+    /*
++E_UTRAN Service
+
++CGEV: ME PDN ACT 1
+
++NITZ: 2025/07/10,15:54:58+0,0
+ATE0
+*/
+// 等待设备初始化完成信息，并捕捉设备时间，完成首次时间同步
+    while (serial->available())
+    {
+        String line = readLine();
+        if (line.indexOf("+E_UTRAN Service") >= 0)
+        {
+            AIR780EG_LOGI(TAG, "Device initialized");
+            break;
+        }
+    }
+
     // 清空串口缓冲区
     clearSerialBuffer();
 
@@ -165,6 +184,15 @@ bool Air780EGCore::initModem()
     //     delay(2000);
     // }
 
+    // 激活PDP上下文 780eg没有这个
+    // String response = sendATCommandWithResponse("AT+MIPCALL?", "OK", 5000);
+    // if (response.indexOf("OK") < 0)
+    // {
+    //     AIR780EG_LOGE(TAG, "激活PDP上下文失败");
+    //     return false;
+    // }
+    // AIR780EG_LOGI(TAG, "激活PDP上下文成功");
+
     return true;
 }
 
@@ -172,6 +200,8 @@ bool Air780EGCore::isNetworkReadyCheck()
 {
 
 
+    // CEREG 4G 注册状态
+    // CGREG 2G 注册状态
     String response = sendATCommandWithResponse("AT+CEREG?", "OK", 5000);
     // 支持本地网络注册(1)和漫游网络注册(5)
     // 注意：第一个数字是上报模式，第二个数字是注册状态
@@ -206,16 +236,27 @@ bool Air780EGCore::isNetworkReadyCheck()
     return true;
 }
 
+// 等待期望的响应，支持超时机制
 bool Air780EGCore::waitExpectedResponse(const String &expected_response, unsigned long timeout)
 {
-    while (serial->available())
+    unsigned long start_time = millis();
+    
+    while (millis() - start_time < timeout)
     {
-        String line = readLine();
-        if (line.indexOf(expected_response) >= 0)
+        // 检查串口是否有数据
+        if (serial->available())
         {
-            return true;
+            String line = readLine();
+            if (line.length() > 0 && line.indexOf(expected_response) >= 0)
+            {
+                return true;
+            }
         }
+        
+        // 添加小延迟避免CPU占用过高
+        delay(10);
     }
+    
     return false;
 }
 
@@ -227,6 +268,9 @@ void Air780EGCore::loop()
         return;
     }
 
+    return; 
+    // 不启用 URC 涉及到统一处理问题，属于另一个模式，现在就是命令调用的时候等待超时获取结果
+
     // 处理接收到的数据，仅将URC特征的行传递给URC管理器
     while (serial->available())
     {
@@ -236,20 +280,18 @@ void Air780EGCore::loop()
             // 只处理具有URC特征的行
             // +UGNSINF:
             // +CSQ: 99,99 信号强度
-            // MQTT 连接成功：CONNECT OK
-            // MQTT 订阅成功：SUBACK
             // MQTT 订阅自动打印：+MSUB:
             // 网络就绪 +CGREG 0,1
             if (
                 line.startsWith("+UGNSINF:") ||
                 line.startsWith("+MSUB:") ||
-                line.startsWith("CONNECT OK") ||
                 line.startsWith("+CSQ:") ||
                 line.startsWith("+CGREG:"))
             {
                 urc_manager->processLine(line);
+            }else{
+                Serial.println("FOR URC:"+line);
             }
-            // 其他普通AT响应行不处理
         }
     }
 }
@@ -316,12 +358,12 @@ String Air780EGCore::readResponse(unsigned long timeout)
             response += c;
 
             // 检查是否收到完整响应
-            if (response.endsWith("OK\r\n") ||
-                response.endsWith("ERROR\r\n") ||
-                response.endsWith("FAIL\r\n"))
-            {
+            if (response.endsWith("OK\r\n")||
+                response.endsWith("CONNECT OK\r\n")||
+                response.endsWith("SUBACK\r\n")||
+                response.endsWith("+MSUB:\r\n")
+            )
                 break;
-            }
         }
         delay(1);
     }
@@ -333,6 +375,39 @@ String Air780EGCore::readResponse(unsigned long timeout)
     AIR780EG_LOGV(TAG, "< %s", response.c_str());
     return response;
 }
+
+String Air780EGCore::readResponseUntilExpected(const String& expected_response,unsigned long timeout)
+{
+    if (!serial)
+        return "";
+
+    String response = "";
+    unsigned long start_time = millis();
+
+    while (millis() - start_time < timeout)
+    {
+        if (serial->available())
+        {
+            char c = serial->read();
+            response += c;
+
+            // 检查是否收到完整响应
+            if (response.endsWith(expected_response)||
+                response.endsWith("ERROR\r\n")
+            )
+                break;
+        }
+        delay(1);
+    }
+
+    response.trim();
+    response_cache = response;
+
+    // 优化日志输出，显示为输出模式
+    AIR780EG_LOGV(TAG, "< %s", response.c_str());
+    return response;
+}
+
 
 String Air780EGCore::sendATCommand(const String &cmd, unsigned long timeout)
 {
@@ -366,6 +441,36 @@ String Air780EGCore::sendATCommand(const String &cmd, unsigned long timeout)
     {
         AIR780EG_LOGW(TAG, "No response for command: %s", cmd.c_str());
     }
+
+    return response;
+}
+
+String Air780EGCore::sendATCommandUntilExpected(const String& cmd, const String& expected_response, unsigned long timeout)
+{
+    if (!serial || !initialized)
+    {
+        AIR780EG_LOGE(TAG, "Module not initialized");
+        return "";
+    }
+
+    // 确保AT指令间有足够间隔
+    unsigned long current_time = millis();
+    if (current_time - last_at_time < at_command_delay)
+    {
+        delay(at_command_delay - (current_time - last_at_time));
+    }
+
+    // 优化日志输出，显示为输入模式
+    AIR780EG_LOGD(TAG, "> %s", cmd.c_str());
+
+    // 清空接收缓冲区
+    // clearSerialBuffer();
+
+    serial->println(cmd);
+    last_at_time = millis();
+
+    // 读取响应
+    String response = readResponseUntilExpected(expected_response, timeout);
 
     return response;
 }

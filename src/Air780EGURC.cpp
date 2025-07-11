@@ -139,6 +139,8 @@ void Air780EGURC::onNetworkRegistration(URCHandler handler) {
     registerHandler("+CEREG:", URCType::NETWORK_REGISTRATION, handler, "Network Registration");
 }
 
+
+
 void Air780EGURC::onSignalQuality(URCHandler handler) {
     registerHandler("+CSQ:", URCType::SIGNAL_QUALITY, handler, "Signal Quality");
 }

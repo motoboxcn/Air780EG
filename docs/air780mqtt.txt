@@ -34,6 +34,9 @@ SUBACK
 
 AT+MPUB="mqtt/sub",0,0,"data from 4G module"        //发布主题
 
+AT+MPUB="mqtt/topic",0,0,"SSSSddddd" 
+AT+MPUB="mqtt/topic",0,0,"313233" 
+AT+MPUB="vehicle/v1/ECE334B0AD08/status",0,0,"{\"status\":\"online\"}"
 OK
 
 +MSUB: "mqtt/pub",20 byte,data from tcp server          //收到服务器下发的消息，+MSUB的URC上报

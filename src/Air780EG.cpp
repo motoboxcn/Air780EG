@@ -95,14 +95,13 @@ void Air780EG::loop() {
     
     last_loop_time = current_time;
     
-    // 调用核心模块的loop方法（处理URC）
+    // 调用核心模块的loop方法
     core.loop();
     
     // 调用各子模块的loop方法
-    network.loop();
+    // network.loop();
     gnss.loop();
     mqtt.loop();
-    // HTTP模块通常不需要循环处理，因为它是同步的
 }
 
 bool Air780EG::isReady() {
