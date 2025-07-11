@@ -43,7 +43,13 @@ bool Air780EGGNSS::enableGNSS()
         return false;
     }
 
-    // AT +CGNSURC= 1  设置自动上报
+    // AT+CGNSURC=1  设置自动上报
+    // 0 表示不自动上报
+    if (!core->sendATCommandBool("AT+CGNSURC=0"))
+    {
+        AIR780EG_LOGE(TAG, "Failed to disable GNSS automatic reporting");
+        return false;
+    }
 
     delay(1000);
 
@@ -304,9 +310,29 @@ void Air780EGGNSS::loop()
     if (current_time - last_loop_time >= gnss_update_interval)
     {
         // 当gnss 信号丢失的时候，通过LBS辅助定位
-        if (gnss_enabled && gnss_data.is_fixed)
+        if (gnss_enabled)
         {
             updateGNSSData();
+
+            // 健康检查：连续多次无效数据则重启GNSS
+            if (!gnss_data.data_valid || gnss_data.latitude == 0.0 || gnss_data.satellites == 0)
+            {
+                gnss_error_count++;
+                if (gnss_error_count >= gnss_error_threshold &&
+                    current_time - last_gnss_reinit_time > gnss_reinit_interval)
+                {
+                    AIR780EG_LOGW(TAG, "GNSS异常，自动重新初始化...");
+                    disableGNSS();
+                    delay(500);
+                    enableGNSS();
+                    last_gnss_reinit_time = current_time;
+                    gnss_error_count = 0;
+                }
+            }
+            else
+            {
+                gnss_error_count = 0; // 数据正常，清零计数
+            }
         }
         else
         {
@@ -523,6 +549,7 @@ void Air780EGGNSS::printGNSSInfo()
 {
     AIR780EG_LOGI(TAG, "=== GNSS Information ===");
     AIR780EG_LOGI(TAG, "Fixed: %s", gnss_data.is_fixed ? "Yes" : "No");
+    AIR780EG_LOGI(TAG, "Location Type: %s", gnss_data.location_type.c_str());
     AIR780EG_LOGI(TAG, "Satellites: %d", gnss_data.satellites);
     AIR780EG_LOGI(TAG, "Latitude: %.6f", gnss_data.latitude);
     AIR780EG_LOGI(TAG, "Longitude: %.6f", gnss_data.longitude);
@@ -544,4 +571,24 @@ String Air780EGGNSS::getRawGNSSData()
     }
 
     return core->sendATCommand("AT+CGNSINF", 3000);
+}
+
+String Air780EGGNSS::getLocationJSON()
+{
+    DynamicJsonDocument doc(1024);
+    doc["latitude"] = gnss_data.latitude;
+    doc["longitude"] = gnss_data.longitude;
+    doc["altitude"] = gnss_data.altitude;
+    doc["speed"] = gnss_data.speed;
+    doc["course"] = gnss_data.course;
+    doc["hdop"] = gnss_data.hdop;
+    doc["date"] = gnss_data.date;
+    doc["timestamp"] = gnss_data.timestamp;
+    doc["location_type"] = gnss_data.location_type;
+    doc["satellites"] = gnss_data.satellites;
+    doc["is_fixed"] = gnss_data.is_fixed;
+    doc["data_valid"] = gnss_data.data_valid;
+    doc["location_type"] = gnss_data.location_type;
+    doc["satellites"] = gnss_data.satellites;
+    return doc.as<String>();
 }

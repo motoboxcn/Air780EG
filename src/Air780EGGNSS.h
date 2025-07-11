@@ -2,6 +2,7 @@
 #define AIR780EG_GNSS_H
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include "Air780EGCore.h"
 #include "Air780EGDebug.h"
 
@@ -43,10 +44,15 @@ private:
         String location_type; // 定位类型：LBS、WIFI、GNSS
         bool data_valid;
     } gnss_data;
-    unsigned long gnss_update_interval = 500; // 500ms
+    unsigned long gnss_update_interval = 100; // 500ms
     unsigned long last_loop_time = 0;
     bool gnss_enabled = false;
     bool lbs_location_enabled = false;
+
+    int gnss_error_count = 0;
+    const int gnss_error_threshold = 3; // 连续3次异常就重启GNSS
+    unsigned long last_gnss_reinit_time = 0;
+    unsigned long gnss_reinit_interval = 5000; // 5秒内只允许重启一次
 
     // 内部方法
     void updateGNSSData();
@@ -86,6 +92,7 @@ public:
     // 调试方法
     void printGNSSInfo();
     String getRawGNSSData();
+    String getLocationJSON();
 };
 
 #endif // AIR780EG_GNSS_H
