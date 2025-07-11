@@ -43,6 +43,21 @@ struct Air780EGMQTTConfig {
 typedef void (*MQTTMessageCallback)(const String& topic, const String& payload);
 typedef void (*MQTTConnectionCallback)(bool connected);
 
+// 定时任务回调函数类型 - 返回要发布的JSON数据
+typedef String (*ScheduledTaskCallback)(void);
+
+// 定时任务结构
+struct ScheduledTask {
+    String topic;                    // 发布主题
+    ScheduledTaskCallback callback;  // 数据生成回调函数
+    unsigned long interval_ms;       // 执行间隔（毫秒）
+    unsigned long last_execution;    // 上次执行时间
+    int qos;                        // QoS等级
+    bool retain;                    // 保留消息标志
+    bool enabled;                   // 任务是否启用
+    String task_name;               // 任务名称（用于调试）
+};
+
 class Air780EGMQTT {
 private:
     static const char* TAG;
@@ -72,10 +87,19 @@ private:
     int subscription_qos[MAX_SUBSCRIPTIONS];
     int subscription_count = 0;
     
+    // 定时任务管理
+    static const int MAX_SCHEDULED_TASKS = 10;
+    ScheduledTask scheduled_tasks[MAX_SCHEDULED_TASKS];
+    int scheduled_task_count = 0;
+    
     // 内部方法
     bool waitForURC(const String& urc_prefix, String& response, unsigned long timeout = 10000);
     void handleMQTTURC(const String& urc);
+    void parseMQTTMessage(const String& message);  // 解析MQTT消息
+    String fromHexString(const String& hex);       // HEX转字符串
+    bool isHexString(const String& str);           // 检查是否为HEX字符串
     void processMessageCache();
+    void processScheduledTasks();  // 处理定时任务
     bool reconnect();
     String toHexString(const String& input);
     
@@ -103,6 +127,19 @@ public:
     // 发布消息
     bool publish(const String& topic, const String& payload, int qos = 0, bool retain = false);
     bool publishJSON(const String& topic, const String& json, int qos = 0);
+    // 支持用户周期性的发布数据，入参支持 主题，数据结构，发布周期秒 
+    bool addTopicToPublishSchedule(const String& topic, const String& payload, int period_sec = 60);
+    
+    // 定时任务管理
+    bool addScheduledTask(const String& task_name, const String& topic, 
+                         ScheduledTaskCallback callback, unsigned long interval_ms, 
+                         int qos = 0, bool retain = false);
+    bool removeScheduledTask(const String& task_name);
+    bool enableScheduledTask(const String& task_name, bool enabled = true);
+    bool disableScheduledTask(const String& task_name);
+    int getScheduledTaskCount() const;
+    String getScheduledTaskInfo(int index) const;
+    void clearAllScheduledTasks();
     
     // 订阅管理
     bool subscribe(const String& topic, int qos = 0);

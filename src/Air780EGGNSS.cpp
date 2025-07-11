@@ -31,6 +31,15 @@ bool Air780EGGNSS::enableGNSS() {
         AIR780EG_LOGE(TAG, "Failed to power on GNSS");
         return false;
     }
+
+    // AT +CGNSAID=31,1,1,1  使能辅助定位
+    if (!core->sendATCommandBool("AT+CGNSAID=31,1,1,1")) {
+        AIR780EG_LOGE(TAG, "Failed to enable GNSS auxiliary positioning");
+        return false;
+    }
+
+    // AT +CGNSURC= 1  设置自动上报
+
     
     delay(1000);
     

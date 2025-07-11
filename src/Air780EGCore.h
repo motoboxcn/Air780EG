@@ -26,7 +26,6 @@ private:
     void clearSerialBuffer();
     bool initModem();
     bool isAtReady();
-    String readResponse(unsigned long timeout);
     String readResponseUntilExpected(const String& expected_response,unsigned long timeout);
     String readLine(); // 读取一行数据
     
@@ -37,14 +36,12 @@ public:
     // 初始化和配置
     bool begin(HardwareSerial* ser, int baudrate, int rx_pin, int tx_pin, int power_pin);
     
-    // 主循环 - 处理URC消息
-    void loop();
-    
     // AT指令交互
     String sendATCommand(const String& cmd, unsigned long timeout = 1000);
     String sendATCommandUntilExpected(const String& cmd, const String& expected_response, unsigned long timeout = 1000);
     bool sendATCommandBool(const String& cmd, unsigned long timeout = 1000);
     String sendATCommandWithResponse(const String& cmd, const String& expected_response, unsigned long timeout = 3000);
+    String readResponse(unsigned long timeout);
     
     // 模块控制
     bool isReady();

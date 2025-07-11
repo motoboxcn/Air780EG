@@ -1,5 +1,4 @@
 #include "Air780EGCore.h"
-#include "Air780EGURC.h"
 
 const char *Air780EGCore::TAG = "Air780EGCore";
 
@@ -260,41 +259,6 @@ bool Air780EGCore::waitExpectedResponse(const String &expected_response, unsigne
     return false;
 }
 
-
-void Air780EGCore::loop()
-{
-    if (!serial || !initialized)
-    {
-        return;
-    }
-
-    return; 
-    // 不启用 URC 涉及到统一处理问题，属于另一个模式，现在就是命令调用的时候等待超时获取结果
-
-    // 处理接收到的数据，仅将URC特征的行传递给URC管理器
-    while (serial->available())
-    {
-        String line = readLine();
-        if (line.length() > 0 && urc_manager)
-        {
-            // 只处理具有URC特征的行
-            // +UGNSINF:
-            // +CSQ: 99,99 信号强度
-            // MQTT 订阅自动打印：+MSUB:
-            // 网络就绪 +CGREG 0,1
-            if (
-                line.startsWith("+UGNSINF:") ||
-                line.startsWith("+MSUB:") ||
-                line.startsWith("+CSQ:") ||
-                line.startsWith("+CGREG:"))
-            {
-                urc_manager->processLine(line);
-            }else{
-                Serial.println("FOR URC:"+line);
-            }
-        }
-    }
-}
 
 String Air780EGCore::readLine()
 {

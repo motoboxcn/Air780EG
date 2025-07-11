@@ -21,12 +21,6 @@ bool Air780EG::begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pi
         return false;
     }
     
-    // 设置URC管理器
-    core.setURCManager(&urc_manager);
-    
-    // 设置URC处理器
-    setupURCHandlers();
-    
     // 等待模块稳定
     delay(2000);
     
@@ -39,45 +33,6 @@ bool Air780EG::begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pi
     initialized = true;
     AIR780EG_LOGI(TAG, "Air780EG module initialized successfully");
     return true;
-}
-
-void Air780EG::setupURCHandlers() {
-    AIR780EG_LOGD(TAG, "Setting up URC handlers...");
-    
-    // 网络注册URC处理
-    urc_manager.onNetworkRegistration([this](const URCData& urc) {
-        AIR780EG_LOGV(TAG, "Network registration URC: %s", urc.raw_data.c_str());
-        // 网络模块会通过定时查询获取状态，这里只记录日志
-        auto reg = URCHelper::parseNetworkRegistration(urc);
-        AIR780EG_LOGD(TAG, "Network status: %s", reg.getStatusString().c_str());
-    });
-    
-    // GNSS信息URC处理
-    urc_manager.onGNSSInfo([this](const URCData& urc) {
-        AIR780EG_LOGV(TAG, "GNSS info URC: %s", urc.raw_data.c_str());
-        // GNSS模块会通过定时查询获取数据，这里只记录日志
-        auto gnss_info = URCHelper::parseGNSSInfo(urc);
-        if (gnss_info.isValid()) {
-            AIR780EG_LOGD(TAG, "GNSS fix: %.6f, %.6f", gnss_info.latitude, gnss_info.longitude);
-        }
-    });
-    
-    // MQTT消息URC处理
-    urc_manager.onMQTTMessage([this](const URCData& urc) {
-        AIR780EG_LOGI(TAG, "MQTT message URC: %s", urc.raw_data.c_str());
-        auto mqtt_msg = URCHelper::parseMQTTMessage(urc);
-        if (mqtt_msg.isValid()) {
-            AIR780EG_LOGI(TAG, "MQTT: Topic=%s, Payload=%s", 
-                         mqtt_msg.topic.c_str(), mqtt_msg.payload.c_str());
-        }
-    });
-    
-    // 错误报告URC处理
-    urc_manager.onErrorReport([this](const URCData& urc) {
-        AIR780EG_LOGW(TAG, "Error report URC: %s", urc.raw_data.c_str());
-    });
-    
-    AIR780EG_LOGD(TAG, "URC handlers setup completed");
 }
 
 void Air780EG::loop() {
@@ -95,11 +50,9 @@ void Air780EG::loop() {
     
     last_loop_time = current_time;
     
-    // 调用核心模块的loop方法
-    core.loop();
     
     // 调用各子模块的loop方法
-    // network.loop();
+    network.loop();
     gnss.loop();
     mqtt.loop();
 }

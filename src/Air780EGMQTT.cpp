@@ -13,6 +13,15 @@ Air780EGMQTT::Air780EGMQTT(Air780EGCore *core_instance)
     config.keepalive = 60;
     config.clean_session = true;
     config.use_ssl = false;
+
+    // 初始化定时任务数组
+    scheduled_task_count = 0;
+    for (int i = 0; i < MAX_SCHEDULED_TASKS; i++)
+    {
+        scheduled_tasks[i].enabled = false;
+        scheduled_tasks[i].callback = nullptr;
+        scheduled_tasks[i].last_execution = 0;
+    }
 }
 
 Air780EGMQTT::~Air780EGMQTT()
@@ -38,8 +47,18 @@ bool Air780EGMQTT::begin(const Air780EGMQTTConfig &cfg)
     if (response.indexOf("OK") < 0)
     {
         AIR780EG_LOGW(TAG, "Failed to set MQTT text mode");
+        return false;
     }
     AIR780EG_LOGI(TAG, "MQTT module initialized");
+
+    // 设置消息上报模式 AT+MQTTMSGSET=0 主动URC上报；1AT+MQTTMSGSET=缓存模式缓存模式。然后用 AT+MQTTMSGGET 来读消息
+    response = core->sendATCommandWithResponse("AT+MQTTMSGSET=0", "OK", 3000);
+    if (response.indexOf("OK") < 0)
+    {
+        AIR780EG_LOGW(TAG, "Failed to set MQTT message report mode");
+        return false;
+    }
+
     return true;
 }
 
@@ -353,6 +372,16 @@ void Air780EGMQTT::loop()
 {
     // processMessageCache();
 
+    // 处理接收到的数据，仅将URC特征的行传递给URC管理器
+    String response = core->readResponse(1000);
+    if (response.length() > 0)
+    {
+        handleMQTTURC(response);
+    }
+
+    // 处理定时任务
+    processScheduledTasks();
+
     // 查询 MQTT 连接状态：AT+MQTTSTATU 5秒一次
     static unsigned long last_check_time = 0;
     if (millis() - last_check_time >= 5000)
@@ -399,7 +428,7 @@ bool Air780EGMQTT::waitForURC(const String &urc_prefix, String &response, unsign
 
 void Air780EGMQTT::handleMQTTURC(const String &urc)
 {
-    AIR780EG_LOGD(TAG, "Handling URC");
+    AIR780EG_LOGD(TAG, "Handling URC: %s", urc.c_str());
 
     if (urc.startsWith("+MCONNECT:"))
     {
@@ -419,10 +448,18 @@ void Air780EGMQTT::handleMQTTURC(const String &urc)
     }
     else if (urc.startsWith("+MSUB:"))
     {
-        // 收到订阅消息 - 简化处理
+        // 收到订阅消息 - 使用新的解析函数
         if (message_callback)
         {
-            message_callback("test/topic", "test payload");
+            parseMQTTMessage(urc);
+        }
+    }
+    else if (urc.startsWith("+CGNSINF:"))
+    {
+        // 收到GNSS信息
+        if (message_callback)
+        {
+            message_callback("GNSS", urc);
         }
     }
 }
@@ -511,12 +548,278 @@ void Air780EGMQTT::printConfig() const
 }
 
 // HEX转换函数
-String Air780EGMQTT::toHexString(const String& input) {
+String Air780EGMQTT::toHexString(const String &input)
+{
     String hex = "";
-    for (size_t i = 0; i < input.length(); ++i) {
+    for (size_t i = 0; i < input.length(); ++i)
+    {
         char buf[3];
         sprintf(buf, "%02x", (unsigned char)input[i]);
         hex += buf;
     }
     return hex;
+}
+
+// 处理定时任务
+void Air780EGMQTT::processScheduledTasks()
+{
+    if (!isConnected())
+    {
+        return; // 只有在连接状态下才执行定时任务
+    }
+
+    unsigned long current_time = millis();
+
+    for (int i = 0; i < scheduled_task_count; i++)
+    {
+        ScheduledTask &task = scheduled_tasks[i];
+
+        if (!task.enabled || task.callback == nullptr)
+        {
+            continue;
+        }
+
+        // 检查是否到了执行时间
+        if (current_time - task.last_execution >= task.interval_ms)
+        {
+            AIR780EG_LOGD(TAG, "Executing scheduled task: %s", task.task_name.c_str());
+
+            // 调用回调函数获取数据
+            String payload = task.callback();
+
+            if (payload.length() > 0)
+            {
+                // 发布数据
+                if (publish(task.topic, payload, task.qos, task.retain))
+                {
+                    AIR780EG_LOGD(TAG, "Published scheduled task data: %s -> %s",
+                                  task.topic.c_str(), payload.c_str());
+                }
+                else
+                {
+                    AIR780EG_LOGW(TAG, "Failed to publish scheduled task: %s", task.task_name.c_str());
+                }
+            }
+
+            task.last_execution = current_time;
+        }
+    }
+}
+
+// 添加定时任务
+bool Air780EGMQTT::addScheduledTask(const String &task_name, const String &topic,
+                                    ScheduledTaskCallback callback, unsigned long interval_ms,
+                                    int qos, bool retain)
+{
+    if (scheduled_task_count >= MAX_SCHEDULED_TASKS)
+    {
+        AIR780EG_LOGE(TAG, "Maximum scheduled tasks reached");
+        return false;
+    }
+
+    if (callback == nullptr)
+    {
+        AIR780EG_LOGE(TAG, "Callback function is null");
+        return false;
+    }
+
+    if (interval_ms < 1000)
+    {
+        AIR780EG_LOGW(TAG, "Interval too short, minimum 1 second");
+        interval_ms = 1000;
+    }
+    AIR780EG_LOGI(TAG, "Add scheduled task: %s, topic: %s, interval: %lu ms",
+                  task_name.c_str(), topic.c_str(), interval_ms);
+
+    // 检查任务名是否已存在
+    for (int i = 0; i < scheduled_task_count; i++)
+    {
+        if (scheduled_tasks[i].task_name == task_name)
+        {
+            AIR780EG_LOGI(TAG, "Task name already exists: %s", task_name.c_str());
+            return false;
+        }
+    }
+
+    // 添加新任务
+    ScheduledTask &task = scheduled_tasks[scheduled_task_count];
+    task.task_name = task_name;
+    task.topic = topic;
+    task.callback = callback;
+    task.interval_ms = interval_ms;
+    task.qos = qos;
+    task.retain = retain;
+    task.enabled = true;
+    task.last_execution = millis();
+
+    scheduled_task_count++;
+
+    AIR780EG_LOGI(TAG, "Added scheduled task: %s, topic: %s, interval: %lu ms",
+                  task_name.c_str(), topic.c_str(), interval_ms);
+
+    return true;
+}
+
+// 移除定时任务
+bool Air780EGMQTT::removeScheduledTask(const String &task_name)
+{
+    for (int i = 0; i < scheduled_task_count; i++)
+    {
+        if (scheduled_tasks[i].task_name == task_name)
+        {
+            // 将后面的任务前移
+            for (int j = i; j < scheduled_task_count - 1; j++)
+            {
+                scheduled_tasks[j] = scheduled_tasks[j + 1];
+            }
+            scheduled_task_count--;
+
+            AIR780EG_LOGI(TAG, "Removed scheduled task: %s", task_name.c_str());
+            return true;
+        }
+    }
+
+    AIR780EG_LOGW(TAG, "Task not found: %s", task_name.c_str());
+    return false;
+}
+
+// 启用定时任务
+bool Air780EGMQTT::enableScheduledTask(const String &task_name, bool enabled)
+{
+    for (int i = 0; i < scheduled_task_count; i++)
+    {
+        if (scheduled_tasks[i].task_name == task_name)
+        {
+            scheduled_tasks[i].enabled = enabled;
+            AIR780EG_LOGI(TAG, "Task %s %s", task_name.c_str(), enabled ? "enabled" : "disabled");
+            return true;
+        }
+    }
+
+    AIR780EG_LOGW(TAG, "Task not found: %s", task_name.c_str());
+    return false;
+}
+
+// 禁用定时任务
+bool Air780EGMQTT::disableScheduledTask(const String &task_name)
+{
+    return enableScheduledTask(task_name, false);
+}
+
+// 获取定时任务数量
+int Air780EGMQTT::getScheduledTaskCount() const
+{
+    return scheduled_task_count;
+}
+
+// 获取定时任务信息
+String Air780EGMQTT::getScheduledTaskInfo(int index) const
+{
+    if (index < 0 || index >= scheduled_task_count)
+    {
+        return "";
+    }
+
+    const ScheduledTask &task = scheduled_tasks[index];
+    String info = "Task: " + task.task_name +
+                  ", Topic: " + task.topic +
+                  ", Interval: " + String(task.interval_ms) + "ms" +
+                  ", QoS: " + String(task.qos) +
+                  ", Retain: " + String(task.retain ? "true" : "false") +
+                  ", Enabled: " + String(task.enabled ? "true" : "false");
+
+    return info;
+}
+
+// 清除所有定时任务
+void Air780EGMQTT::clearAllScheduledTasks()
+{
+    scheduled_task_count = 0;
+    for (int i = 0; i < MAX_SCHEDULED_TASKS; i++)
+    {
+        scheduled_tasks[i].enabled = false;
+        scheduled_tasks[i].callback = nullptr;
+        scheduled_tasks[i].last_execution = 0;
+    }
+
+    AIR780EG_LOGI(TAG, "All scheduled tasks cleared");
+}
+
+// 新增：HEX字符串转普通字符串的辅助函数
+String Air780EGMQTT::fromHexString(const String &hex)
+{
+    String result = "";
+    for (size_t i = 0; i < hex.length(); i += 2)
+    {
+        if (i + 1 < hex.length())
+        {
+            String byteString = hex.substring(i, i + 2);
+            char byte = (char)strtol(byteString.c_str(), NULL, 16);
+            result += byte;
+        }
+    }
+    return result;
+}
+
+// 新增：检查字符串是否为HEX格式的辅助函数
+bool Air780EGMQTT::isHexString(const String &str)
+{
+    for (size_t i = 0; i < str.length(); i++)
+    {
+        char c = str.charAt(i);
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+        {
+            return false;
+        }
+    }
+    return str.length() > 0 && str.length() % 2 == 0; // HEX字符串长度必须是偶数
+}
+
+// 修改：解析MQTT消息的辅助函数
+void Air780EGMQTT::parseMQTTMessage(const String &message)
+{
+    AIR780EG_LOGD(TAG, "Parsing MQTT message: %s", message.c_str());
+    
+    // 查找第一个逗号的位置
+    int first_comma = message.indexOf(",");
+    if (first_comma > 0)
+    {
+        // 提取主题 (去掉引号)
+        String topic = message.substring(7, first_comma); // 跳过 "+MSUB: "
+        if (topic.startsWith("\"") && topic.endsWith("\""))
+        {
+            topic = topic.substring(1, topic.length() - 1);
+        }
+        
+        // 查找第二个逗号的位置
+        int second_comma = message.indexOf(",", first_comma + 1);
+        if (second_comma > 0)
+        {
+            // 提取负载 (从第二个逗号后开始)
+            String payload = message.substring(second_comma + 1);
+            
+            // 检查是否是HEX格式的负载
+            if (payload.length() > 0 && isHexString(payload))
+            {
+                // 将HEX转换为普通字符串
+                String decoded_payload = fromHexString(payload);
+                AIR780EG_LOGD(TAG, "Decoded HEX payload: %s -> %s", payload.c_str(), decoded_payload.c_str());
+                payload = decoded_payload;
+            }
+            
+            AIR780EG_LOGD(TAG, "Parsed MQTT message - Topic: %s, Payload: %s", topic.c_str(), payload.c_str());
+            if (message_callback)
+            {
+                message_callback(topic, payload);
+            }
+        }
+        else
+        {
+            AIR780EG_LOGW(TAG, "Invalid MQTT message format: %s", message.c_str());
+        }
+    }
+    else
+    {
+        AIR780EG_LOGW(TAG, "Invalid MQTT message format: %s", message.c_str());
+    }
 }
