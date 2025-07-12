@@ -2,6 +2,19 @@
 
 Air780EG是一个功能完整的Arduino库，专为Air780EG 4G+GNSS模块设计。该库提供了面向对象的接口，支持AT指令交互、网络管理、GNSS定位等功能，并通过智能缓存机制最大化减少AT指令调用次数。
 
+## 设备购买
+
+如需购买Air780EG开发板和模块，可通过以下渠道：
+
+![淘宝购买链接](docs/shop_taobao.png)
+
+**推荐配置**：
+- Air780EG开发板
+- 4G全网通SIM卡
+- GNSS天线
+- 4G天线
+- 稳定电源适配器
+
 ## 特性
 
 - **分层架构设计**：核心AT指令层、网络管理层、GNSS定位层、MQTT客户端层分离
@@ -20,14 +33,6 @@ Air780EG是一个功能完整的Arduino库，专为Air780EG 4G+GNSS模块设计�
 - 模块初始化和复位
 - 硬件电源控制
 - 串口通信管理
-- URC管理器集成
-
-### URC管理 (Air780EGURC)
-- **主动上报消息处理**：自动捕获和分发URC消息
-- **多种URC类型支持**：网络注册、GNSS定位、MQTT消息等
-- **自定义处理器注册**：支持注册自定义URC处理函数
-- **智能消息解析**：提供便捷的URC数据解析工具
-- **统计和调试**：URC处理统计信息和调试输出
 
 ### 网络管理 (Air780EGNetwork)
 - 网络注册状态监控
@@ -43,18 +48,16 @@ Air780EG是一个功能完整的Arduino库，专为Air780EG 4G+GNSS模块设计�
 - **消息订阅**：支持多主题订阅和通配符匹配
 - **SSL/TLS加密**：支持安全连接和证书验证
 - **遗嘱消息**：支持Last Will Testament配置
-- **异步处理**：非阻塞的消息收发机制
+- **定时任务**：支持定时消息发布
 - **缓存机制**：离线消息缓存和重发机制
 
 ### 定位服务 (Air780EGGNSS)
-- **多模式定位支持**：GNSS + LBS + WiFi 三重定位
 - **GNSS定位**：GPS/北斗/GLONASS多星座支持
-- **LBS基站定位**：基于蜂窝网络的快速定位
-- **WiFi定位**：基于WiFi热点的室内定位辅助
-- **智能定位策略**：自动选择最优定位方式
+- **LBS基站定位**：基于蜂窝网络的快速定位（手动调用）
+- **WiFi定位**：基于WiFi热点的室内定位辅助（手动调用）
+- **手动定位策略**：用户完全控制定位方式选择
 - 实时位置、速度、航向信息
 - 卫星数量和精度信息
-- 可配置更新频率 (0.1Hz - 10Hz)
 - UTC时间和日期信息
 - 定位精度评估和质量指标
 
@@ -146,7 +149,6 @@ Air780EGCore& getCore();
 Air780EGNetwork& getNetwork();
 Air780EGGNSS& getGNSS();
 Air780EGMQTT& getMQTT();
-Air780EGURC& getURC();
 ```
 
 ### Air780EGNetwork 网络管理
@@ -202,11 +204,7 @@ String getDate();               // UTC日期
 
 #### 配置
 ```cpp
-void setUpdateFrequency(float hz);      // 设置更新频率 (0.1-10Hz)
-bool setGNSSMode(int mode);             // 设置定位模式 (1=GPS, 2=北斗, 3=GPS+北斗)
 bool enableLBS(bool enable);            // 启用/禁用LBS定位
-bool enableWiFi(bool enable);           // 启用/禁用WiFi定位
-void setPositioningMode(int mode);      // 设置定位模式 (1=GNSS, 2=LBS, 3=WiFi, 4=混合)
 ```
 
 ### Air780EGMQTT 客户端
@@ -275,11 +273,8 @@ Air780EG::enableTimestamp(true);             // 启用时间戳
 // 网络状态更新间隔
 air780.getNetwork().setUpdateInterval(10000);  // 10秒
 
-// GNSS更新频率
-air780.getGNSS().setUpdateFrequency(2.0);      // 2Hz
-
-// 主循环间隔
-air780.setLoopInterval(50);                    // 50ms
+// 主循环间隔建议
+delay(50);  // 50ms
 ```
 
 ## 硬件连接
