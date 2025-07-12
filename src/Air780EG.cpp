@@ -4,7 +4,7 @@ const char* Air780EG::TAG = "Air780EG";
 
 Air780EG air780eg;
 
-Air780EG::Air780EG() : network(&core), gnss(&core), mqtt(&core) {
+Air780EG::Air780EG() : network(&core), gnss(&core), mqtt(&core, &gnss) {
     AIR780EG_LOGI(TAG, "Air780EG library v%s initialized", AIR780EG_VERSION_STRING);
 }
 

@@ -30,7 +30,7 @@ private:
     // 缓存的GNSS数据
     struct GNSSData
     {
-        bool is_fixed;
+        bool is_fixed; // 运行状态
         double latitude;
         double longitude;
         double altitude;
@@ -42,21 +42,18 @@ private:
         String date;      // UTC日期
         unsigned long last_update;
         String location_type; // 定位类型：LBS、WIFI、GNSS
-        bool data_valid;
+        bool data_valid; // 数据有效性，定位是否获取到
     } gnss_data;
     unsigned long gnss_update_interval = 100; // 500ms
     unsigned long last_loop_time = 0;
     bool gnss_enabled = false;
     bool lbs_location_enabled = false;
 
-    int gnss_error_count = 0;
-    const int gnss_error_threshold = 3; // 连续3次异常就重启GNSS
-    unsigned long last_gnss_reinit_time = 0;
-    unsigned long gnss_reinit_interval = 5000; // 5秒内只允许重启一次
-
     // 内部方法
     void updateGNSSData();
     bool parseGNSSResponse(const String &response);
+    String normalizeDate(const String &date);
+    String normalizeTime(const String &time);
 
 public:
     Air780EGGNSS(Air780EGCore *core_instance);
@@ -64,11 +61,15 @@ public:
     // GNSS控制
     bool enableGNSS();
     bool disableGNSS();
-    // 基站辅助定位
-    bool updateLBS(); // 如果被调用，则更新位置信息到gnss_data，并返回true
-    // bool enableLBSAndWIFI(); // 使能基站辅助定位和WIFI辅助定位
-    //  WIFI辅助定位
-    bool updateWIFILocation(); // 如果被调用，则更新位置信息到gnss_data，并返回true
+    
+    // 辅助定位方法 - 这些方法会阻塞30秒，请在单独线程或按需调用
+    bool updateLBS();           // 基站定位，会阻塞最多30秒
+    bool updateWIFILocation();  // WiFi定位，会阻塞最多30秒
+    
+    // 定位状态查询
+    bool isGNSSSignalLost();    // 检查GNSS信号是否丢失
+    String getLocationSource(); // 获取当前位置来源 ("GNSS", "WiFi", "LBS")
+    unsigned long getLastLocationTime(); // 获取最后定位时间
 
     void loop(); // 定期更新GNSS数据
 

@@ -104,6 +104,57 @@ bool Air780EGGNSS::enableGNSS()
 //     return true;
 // }
 
+// 添加时间格式标准化函数
+String Air780EGGNSS::normalizeDate(const String &date)
+{
+    String normalized = date;
+    
+    // 移除可能的额外字符（如\r\n\r\nOK）
+    int end_pos = normalized.indexOf('\r');
+    if (end_pos >= 0) {
+        normalized = normalized.substring(0, end_pos);
+    }
+    
+    // 处理 YYYYMMDD 格式
+    if (normalized.length() == 8 && normalized.indexOf('/') < 0) {
+        return normalized; // 已经是标准格式
+    }
+    
+    // 处理 YYYY/MM/DD 格式，转换为 YYYYMMDD
+    if (normalized.indexOf('/') >= 0) {
+        // 移除所有斜杠
+        normalized.replace("/", "");
+        return normalized;
+    }
+    
+    return normalized;
+}
+
+String Air780EGGNSS::normalizeTime(const String &time)
+{
+    String normalized = time;
+    
+    // 移除可能的额外字符（如\r\n\r\nOK）
+    int end_pos = normalized.indexOf('\r');
+    if (end_pos >= 0) {
+        normalized = normalized.substring(0, end_pos);
+    }
+    
+    // 处理 HHMMSS 格式
+    if (normalized.length() == 6 && normalized.indexOf(':') < 0) {
+        return normalized; // 已经是标准格式
+    }
+    
+    // 处理 HH:MM:SS 格式，转换为 HHMMSS
+    if (normalized.indexOf(':') >= 0) {
+        // 移除所有冒号
+        normalized.replace(":", "");
+        return normalized;
+    }
+    
+    return normalized;
+}
+
 bool Air780EGGNSS::updateWIFILocation()
 {
     // AT+WIFILOC=1,1 +WIFILOC: 0,31.1826152,120.6673126,2025/07/11,23:49:30 OK
@@ -156,8 +207,8 @@ bool Air780EGGNSS::updateWIFILocation()
         {
             gnss_data.latitude = latitude.toDouble();
             gnss_data.longitude = longitude.toDouble();
-            gnss_data.date = date;
-            gnss_data.timestamp = time;
+            gnss_data.date = normalizeDate(date);
+            gnss_data.timestamp = normalizeTime(time);
             gnss_data.data_valid = true;
             gnss_data.is_fixed = true;
             gnss_data.satellites = 0; // WIFI没有卫星信息
@@ -239,8 +290,8 @@ bool Air780EGGNSS::updateLBS()
             {
                 gnss_data.latitude = latitude.toDouble();
                 gnss_data.longitude = longitude.toDouble();
-                gnss_data.date = date;
-                gnss_data.timestamp = time;
+                gnss_data.date = normalizeDate(date);
+                gnss_data.timestamp = normalizeTime(time);
                 gnss_data.data_valid = true;
                 gnss_data.is_fixed = true;
                 gnss_data.satellites = 0; // LBS没有卫星信息
@@ -313,34 +364,14 @@ void Air780EGGNSS::loop()
         if (gnss_enabled)
         {
             updateGNSSData();
-
-            // 健康检查：连续多次无效数据则重启GNSS
-            if (!gnss_data.data_valid || gnss_data.latitude == 0.0 || gnss_data.satellites == 0)
-            {
-                gnss_error_count++;
-                if (gnss_error_count >= gnss_error_threshold &&
-                    current_time - last_gnss_reinit_time > gnss_reinit_interval)
-                {
-                    AIR780EG_LOGW(TAG, "GNSS异常，自动重新初始化...");
-                    disableGNSS();
-                    delay(500);
-                    enableGNSS();
-                    last_gnss_reinit_time = current_time;
-                    gnss_error_count = 0;
-                }
-            }
-            else
-            {
-                gnss_error_count = 0; // 数据正常，清零计数
-            }
         }
-        else
+
+        // 补充定位
+        // GNSS信号丢失时不自动调用WiFi/LBS定位，避免串口冲突
+        // 用户需要根据业务需求手动调用 updateWIFILocation() 或 updateLBS()
+        if (gnss_data.data_valid == false)
         {
-            // 当gnss 信号丢失的时候，优先使用 WIFI 定位更精准
-            if (!updateWIFILocation() && lbs_location_enabled)
-            {
-                updateLBS();
-            }
+            AIR780EG_LOGD(TAG, "GNSS signal lost. Manual WiFi/LBS location available if needed.");
         }
 
         last_loop_time = current_time;
@@ -358,10 +389,10 @@ void Air780EGGNSS::updateGNSSData()
         if (parseGNSSResponse(response))
         {
             gnss_data.last_update = millis();
-            gnss_data.data_valid = true;
             gnss_data.location_type = "GNSS";
-            AIR780EG_LOGD(TAG, "GNSS data updated - Fixed: %s, Sats: %d, Lat: %.6f, Lng: %.6f",
+            AIR780EG_LOGD(TAG, "GNSS data updated - Fixed: %s, DataValid: %s, Sats: %d, Lat: %.6f, Lng: %.6f",
                           gnss_data.is_fixed ? "Yes" : "No",
+                          gnss_data.data_valid ? "Yes" : "No",
                           gnss_data.satellites,
                           gnss_data.latitude,
                           gnss_data.longitude);
@@ -414,12 +445,25 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
                 break;
             case 1: // 定位状态
                 // 1表示已定位
+                if (field == "1")
+                {
+                    gnss_data.data_valid = true;
+                }
+                else
+                {
+                    gnss_data.data_valid = false;
+                    AIR780EG_LOGD(TAG, "还在定位中... data_valid: %d", gnss_data.data_valid);
+                }
                 break;
             case 2: // UTC日期时间
                 if (field.length() >= 14)
                 {
-                    gnss_data.date = field.substring(0, 8);   // YYYYMMDD
-                    gnss_data.timestamp = field.substring(8); // HHMMSS.sss
+                    String date_part = field.substring(0, 8);   // YYYYMMDD
+                    String time_part = field.substring(8); // HHMMSS.sss
+                    
+                    // 标准化日期和时间格式
+                    gnss_data.date = normalizeDate(date_part);
+                    gnss_data.timestamp = normalizeTime(time_part);
                 }
                 break;
             case 3: // 纬度
@@ -591,4 +635,21 @@ String Air780EGGNSS::getLocationJSON()
     doc["location_type"] = gnss_data.location_type;
     doc["satellites"] = gnss_data.satellites;
     return doc.as<String>();
+}
+// 检查GNSS信号是否丢失
+bool Air780EGGNSS::isGNSSSignalLost()
+{
+    return !gnss_data.data_valid || !gnss_data.is_fixed;
+}
+
+// 获取当前位置来源
+String Air780EGGNSS::getLocationSource()
+{
+    return gnss_data.location_type;
+}
+
+// 获取最后定位时间
+unsigned long Air780EGGNSS::getLastLocationTime()
+{
+    return gnss_data.last_update;
 }

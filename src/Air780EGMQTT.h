@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "Air780EGCore.h"
 #include "Air780EGDebug.h"
+#include "Air780EGGNSS.h"
 
 // MQTT连接状态
 enum Air780EGMQTTState {
@@ -61,7 +62,7 @@ struct ScheduledTask {
 class Air780EGMQTT {
 private:
     static const char* TAG;
-    
+    Air780EGGNSS* gnss;
     Air780EGCore* core;
     Air780EGMQTTConfig config;
     Air780EGMQTTState state;
@@ -104,11 +105,12 @@ private:
     String toHexString(const String& input);
     
 public:
-    Air780EGMQTT(Air780EGCore* core_instance);
+    Air780EGMQTT(Air780EGCore* core_instance, Air780EGGNSS* gnss_instance);
     ~Air780EGMQTT();
     
     // 初始化和配置
     bool begin(const Air780EGMQTTConfig& cfg);
+    bool init();
     Air780EGMQTTConfig getConfig() const;
     
     // 连接管理
@@ -127,8 +129,6 @@ public:
     // 发布消息
     bool publish(const String& topic, const String& payload, int qos = 0, bool retain = false);
     bool publishJSON(const String& topic, const String& json, int qos = 0);
-    // 支持用户周期性的发布数据，入参支持 主题，数据结构，发布周期秒 
-    bool addTopicToPublishSchedule(const String& topic, const String& payload, int period_sec = 60);
     
     // 定时任务管理
     bool addScheduledTask(const String& task_name, const String& topic, 

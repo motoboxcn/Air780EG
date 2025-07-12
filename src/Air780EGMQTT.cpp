@@ -2,8 +2,8 @@
 
 const char *Air780EGMQTT::TAG = "MQTT";
 
-Air780EGMQTT::Air780EGMQTT(Air780EGCore *core_instance)
-    : core(core_instance), state(MQTT_DISCONNECTED),
+Air780EGMQTT::Air780EGMQTT(Air780EGCore *core_instance, Air780EGGNSS *gnss_instance)
+    : core(core_instance), gnss(gnss_instance), state(MQTT_DISCONNECTED),
       message_callback(nullptr), connection_callback(nullptr)
 {
     // 设置默认配置
@@ -40,7 +40,19 @@ bool Air780EGMQTT::begin(const Air780EGMQTTConfig &cfg)
         return false;
     }
     config = cfg;
+    AIR780EG_LOGI(TAG, "MQTT module initialized");
+    
+    if (!init())
+    {
+        AIR780EG_LOGE(TAG, "Failed to initialize MQTT module");
+        return false;
+    }
 
+    return true;
+}
+
+bool Air780EGMQTT::init()
+{
     // 设置MQTT消息格式为文本模式（0=文本模式，1=HEX模式）
     // 由于我们使用JSON文本格式，应该使用文本模式
     String response = core->sendATCommandWithResponse("AT+MQTTMODE=1", "OK", 3000);
@@ -58,7 +70,6 @@ bool Air780EGMQTT::begin(const Air780EGMQTTConfig &cfg)
         AIR780EG_LOGW(TAG, "Failed to set MQTT message report mode");
         return false;
     }
-
     return true;
 }
 
@@ -255,7 +266,7 @@ bool Air780EGMQTT::publish(const String &topic, const String &payload, int qos, 
     String pub_cmd = "AT+MPUB=\"" + topic + "\"," + String(qos) + "," + String(retain ? 1 : 0) + ",\"" + hex_payload + "\"";
     AIR780EG_LOGD(TAG, "Publishing HEX: %s", pub_cmd.c_str());
 
-    delay(100);
+    // 移除阻塞性delay，改为依赖AT指令间隔控制
 
     String response = core->sendATCommandUntilExpected(pub_cmd, "OK", 5000);
     if (response.indexOf("OK") >= 0)
@@ -460,6 +471,16 @@ void Air780EGMQTT::handleMQTTURC(const String &urc)
         if (message_callback)
         {
             message_callback("GNSS", urc);
+        }
+    }
+    else if (urc.indexOf("boot.rom") >= 0) // 确保设备供电正常
+    {
+        Serial.printf("确保设备供电正常，boot.rom: %s\n", urc.c_str());
+        // 重新设置mqtt
+        init();
+        if (gnss->isEnabled())
+        {
+            gnss->enableGNSS();
         }
     }
 }
