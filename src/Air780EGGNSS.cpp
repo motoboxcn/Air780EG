@@ -218,7 +218,7 @@ bool Air780EGGNSS::updateWIFILocation()
             gnss_data.course = 0.0;   // WIFI没有航向信息
             gnss_data.last_update = millis();
             gnss_data.location_type = "WIFI";
-            AIR780EG_LOGI(TAG, "WIFI data parsed - Lat: %.6f, Lng: %.6f, Date: %s, Time: %s",
+            AIR780EG_LOGD(TAG, "WIFI data parsed - Lat: %.6f, Lng: %.6f, Date: %s, Time: %s",
                           gnss_data.latitude, gnss_data.longitude,
                           gnss_data.date.c_str(), gnss_data.timestamp.c_str());
             return true;
@@ -301,7 +301,7 @@ bool Air780EGGNSS::updateLBS()
                 gnss_data.course = 0.0;   // LBS没有航向信息
                 gnss_data.last_update = millis();
                 gnss_data.location_type = "LBS";
-                AIR780EG_LOGI(TAG, "LBS data parsed - Lat: %.6f, Lng: %.6f, Date: %s, Time: %s",
+                AIR780EG_LOGD(TAG, "LBS data parsed - Lat: %.6f, Lng: %.6f, Date: %s, Time: %s",
                               gnss_data.latitude, gnss_data.longitude,
                               gnss_data.date.c_str(), gnss_data.timestamp.c_str());
                 return true;
