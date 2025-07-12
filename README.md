@@ -66,114 +66,64 @@ Air780EG是一个功能完整的Arduino库，专为Air780EG 4G+GNSS模块设计�
 
 ## 安装
 
-将整个`Air780EG`文件夹复制到你的Arduino项目的`lib`目录下。
+Air780EG库支持两种引入方式：
+
+### 方式一：PlatformIO依赖管理（推荐）
+
+在你的 `platformio.ini` 文件中添加库依赖：
+
+```ini
+[env:your_environment]
+platform = espressif32
+board = esp32dev
+framework = arduino
+lib_deps = 
+    https://github.com/zhoushoujianwork/Air780EG.git#v1.2.1
+```
+
+### 方式二：手动放置到lib目录
+
+将整个`Air780EG`文件夹复制到你的Arduino项目的`lib`目录下：
 
 ```
 your_project/
 ├── lib/
 │   └── Air780EG/
-│       ├── src/
-│       ├── examples/
-│       └── library.properties
 ├── src/
+│   └── main.cpp
 └── platformio.ini
 ```
 
+### 详细安装指南
+
+更多安装选项、版本控制、常见问题解决等，请参考：[安装指南文档](docs/Installation.md)
+
+### 系统要求
+
+- **平台**：ESP32/ESP32-S3
+- **框架**：Arduino Framework
+- **编译器**：支持C++11标准
+- **内存**：建议至少512KB RAM
+
 ## 快速开始
 
-### 基本使用示例
-```cpp
-#include <Air780EG.h>
+详细的使用说明和配置指南，请参考：[快速开始文档](docs/QuickStart.md)
 
-Air780EG air780;
+## 文档
 
-void setup() {
-    Serial.begin(115200);
-    
-    // 初始化模块
-    if (air780.begin(&Serial2, 115200)) {
-        Serial.println("Air780EG initialized");
-        
-        // 启用网络
-        air780.getNetwork().enableNetwork();
-        
-        // 启用GNSS，设置1Hz更新频率
-        air780.getGNSS().enableGNSS();
-        air780.getGNSS().setUpdateFrequency(1.0);
-        
-        // 启用三重定位模式 (GNSS + LBS + WiFi)
-        air780.getGNSS().setPositioningMode(4);  // 混合定位模式
-        air780.getGNSS().enableLBS(true);
-        air780.getGNSS().enableWiFi(true);
-    }
-}
+- [安装指南](docs/Installation.md) - 详细的安装和配置说明
+- [快速开始](docs/QuickStart.md) - 基本使用流程和配置
+- [定位策略](docs/LocationStrategy.md) - v1.2.1定位功能变更说明
+- [异步定位](docs/AsyncLocation.md) - 异步定位功能说明（已废弃）
 
-void loop() {
-    // 必须调用，维护所有功能模块
-    air780.loop();
-    
-    // 获取缓存的数据（不会触发AT指令）
-    if (air780.getGNSS().isFixed()) {
-        double lat = air780.getGNSS().getLatitude();
-        double lng = air780.getGNSS().getLongitude();
-        Serial.printf("GPS: %.6f, %.6f\n", lat, lng);
-    }
-    
-    if (air780.getNetwork().isNetworkRegistered()) {
-        int signal = air780.getNetwork().getSignalStrength();
-        Serial.printf("Signal: %d dBm\n", signal);
-    }
-    
-    delay(1000);
-}
-```
+## 示例程序
 
-### MQTT客户端示例
-```cpp
-#include <Air780EG.h>
+库提供了多个示例程序：
 
-Air780EG air780;
-
-void onMqttMessage(const String& topic, const String& payload) {
-    Serial.printf("Received: %s -> %s\n", topic.c_str(), payload.c_str());
-}
-
-void setup() {
-    Serial.begin(115200);
-    
-    if (air780.begin(&Serial2, 115200)) {
-        // 启用网络
-        air780.getNetwork().enableNetwork();
-        
-        // 配置MQTT
-        air780.getMQTT().setMessageCallback(onMqttMessage);
-        air780.getMQTT().setKeepAlive(60);
-        air780.getMQTT().enableAutoReconnect(true);
-        
-        // 连接MQTT服务器
-        if (air780.getMQTT().connect("mqtt.example.com", 1883, "client123")) {
-            air780.getMQTT().subscribe("sensors/+/data");
-            Serial.println("MQTT connected and subscribed");
-        }
-    }
-}
-
-void loop() {
-    air780.loop();
-    
-    // 定期发布数据
-    static unsigned long lastPublish = 0;
-    if (millis() - lastPublish > 30000) {  // 每30秒
-        if (air780.getMQTT().isConnected()) {
-            String data = "{\"temperature\":25.6,\"humidity\":60.2}";
-            air780.getMQTT().publish("sensors/device1/data", data);
-            lastPublish = millis();
-        }
-    }
-    
-    delay(100);
-}
-```
+- `BasicModem` - 基本功能演示
+- `MqttClient` - MQTT客户端示例
+- `GNSSTest` - GNSS定位测试
+- `ManualLocationControl` - 手动定位控制演示 (v1.2.1新增)
 
 ## API 参考
 
