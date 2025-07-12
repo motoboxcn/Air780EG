@@ -20,6 +20,24 @@ AT+CGNSDEL删除 EPO 文件
 AT+CGNSSEQ定义 NMEA 解析
 */
 
+// 缓存的GNSS数据
+typedef struct
+{
+    bool is_fixed; // 运行状态
+    double latitude;
+    double longitude;
+    double altitude;
+    float speed;  // km/h
+    float course; // 度
+    int satellites;
+    float hdop;       // 水平精度因子
+    String timestamp; // UTC时间
+    String date;      // UTC日期
+    unsigned long last_update;
+    String location_type; // 定位类型：LBS、WIFI、GNSS
+    bool data_valid; // 数据有效性，定位是否获取到
+} gnss_data_t;
+
 class Air780EGGNSS
 {
 private:
@@ -27,23 +45,7 @@ private:
 
     Air780EGCore *core;
 
-    // 缓存的GNSS数据
-    struct GNSSData
-    {
-        bool is_fixed; // 运行状态
-        double latitude;
-        double longitude;
-        double altitude;
-        float speed;  // km/h
-        float course; // 度
-        int satellites;
-        float hdop;       // 水平精度因子
-        String timestamp; // UTC时间
-        String date;      // UTC日期
-        unsigned long last_update;
-        String location_type; // 定位类型：LBS、WIFI、GNSS
-        bool data_valid; // 数据有效性，定位是否获取到
-    };
+    
     unsigned long gnss_update_interval = 100; // 500ms
     unsigned long last_loop_time = 0;
     bool gnss_enabled = false;
@@ -58,7 +60,7 @@ private:
 public:
     Air780EGGNSS(Air780EGCore *core_instance);
 
-    GNSSData gnss_data;
+    gnss_data_t gnss_data;
 
     // GNSS控制
     bool enableGNSS();

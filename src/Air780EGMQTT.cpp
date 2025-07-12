@@ -313,7 +313,7 @@ bool Air780EGMQTT::subscribe(const String &topic, int qos)
             subscription_count++;
         }
 
-        AIR780EG_LOGI(TAG, "Subscribed to topic");
+        AIR780EG_LOGI(TAG, "Subscribed to topic: %s", topic.c_str());
         return true;
     }
 
@@ -402,7 +402,7 @@ void Air780EGMQTT::loop()
         if (response.indexOf("OK") >= 0)
         {
             // (0:offline,1:can pub,2: need MCONNECT!)
-            AIR780EG_LOGI(TAG, "MQTT status: %s ", response.c_str());
+            AIR780EG_LOGD(TAG, "MQTT status: %s ", response.c_str());
             if (response.indexOf("1") >= 0)
             {
                 state = MQTT_CONNECTED;

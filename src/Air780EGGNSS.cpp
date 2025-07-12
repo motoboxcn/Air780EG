@@ -161,7 +161,7 @@ bool Air780EGGNSS::updateWIFILocation()
     String response = core->sendATCommandUntilExpected("AT+WIFILOC=1,1", "OK", 30000);
     if (response.indexOf("+WIFILOC:") >= 0)
     {
-        AIR780EG_LOGI(TAG, "WIFI location retrieved: %s", response.c_str());
+        AIR780EG_LOGD(TAG, "WIFI location retrieved: %s", response.c_str());
 
         // 找到+WIFILOC:的位置
         int start_pos = response.indexOf("+WIFILOC:") + 9; // "+WIFILOC:"的长度
@@ -408,6 +408,7 @@ void Air780EGGNSS::updateGNSSData()
     }
 }
 
+// 定位失败的时候会保留之前的位置信息，所以需要判断是否定位成功来确认是否是最新位置信息
 bool Air780EGGNSS::parseGNSSResponse(const String &response)
 {
     // 查找+CGNSINF:行
@@ -427,6 +428,19 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
     String info_line = response.substring(info_start, info_end);
     AIR780EG_LOGV(TAG, "GNSS info line: %s", info_line.c_str());
 
+    // 临时变量存储解析的数据
+    bool temp_is_fixed = false;
+    bool temp_data_valid = false;
+    double temp_latitude = 0.0;
+    double temp_longitude = 0.0;
+    double temp_altitude = 0.0;
+    float temp_speed = 0.0;
+    float temp_course = 0.0;
+    float temp_hdop = 0.0;
+    int temp_satellites = 0;
+    String temp_date = "";
+    String temp_timestamp = "";
+
     // 解析逗号分隔的字段
     int field_count = 0;
     int start = 0;
@@ -441,18 +455,14 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
             switch (field_count)
             {
             case 0: // GNSS运行状态
-                gnss_data.is_fixed = (field == "1");
+                temp_is_fixed = (field == "1");
                 break;
             case 1: // 定位状态
                 // 1表示已定位
-                if (field == "1")
+                temp_data_valid = (field == "1");
+                if (!temp_data_valid)
                 {
-                    gnss_data.data_valid = true;
-                }
-                else
-                {
-                    gnss_data.data_valid = false;
-                    AIR780EG_LOGD(TAG, "还在定位中... data_valid: %d", gnss_data.data_valid);
+                    AIR780EG_LOGD(TAG, "还在定位中... data_valid: %d", temp_data_valid);
                 }
                 break;
             case 2: // UTC日期时间
@@ -462,44 +472,44 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
                     String time_part = field.substring(8); // HHMMSS.sss
                     
                     // 标准化日期和时间格式
-                    gnss_data.date = normalizeDate(date_part);
-                    gnss_data.timestamp = normalizeTime(time_part);
+                    temp_date = normalizeDate(date_part);
+                    temp_timestamp = normalizeTime(time_part);
                 }
                 break;
             case 3: // 纬度
                 if (field.length() > 0)
                 {
-                    gnss_data.latitude = field.toDouble();
+                    temp_latitude = field.toDouble();
                 }
                 break;
             case 4: // 经度
                 if (field.length() > 0)
                 {
-                    gnss_data.longitude = field.toDouble();
+                    temp_longitude = field.toDouble();
                 }
                 break;
             case 5: // 海拔高度
                 if (field.length() > 0)
                 {
-                    gnss_data.altitude = field.toDouble();
+                    temp_altitude = field.toDouble();
                 }
                 break;
             case 6: // 速度 (km/h)
                 if (field.length() > 0)
                 {
-                    gnss_data.speed = field.toFloat();
+                    temp_speed = field.toFloat();
                 }
                 break;
             case 7: // 航向角
                 if (field.length() > 0)
                 {
-                    gnss_data.course = field.toFloat();
+                    temp_course = field.toFloat();
                 }
                 break;
             case 8: // HDOP
                 if (field.length() > 0)
                 {
-                    gnss_data.hdop = field.toFloat();
+                    temp_hdop = field.toFloat();
                 }
                 break;
             case 9: // PDOP
@@ -511,13 +521,52 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
             case 11: // 卫星数量
                 if (field.length() > 0)
                 {
-                    gnss_data.satellites = field.toInt();
+                    temp_satellites = field.toInt();
                 }
                 break;
             }
 
             field_count++;
             start = i + 1;
+        }
+    }
+
+    // 只有在定位成功时才更新位置相关字段
+    if (temp_data_valid && temp_is_fixed)
+    {
+        // 更新所有字段
+        gnss_data.is_fixed = temp_is_fixed;
+        gnss_data.data_valid = temp_data_valid;
+        gnss_data.latitude = temp_latitude;
+        gnss_data.longitude = temp_longitude;
+        gnss_data.altitude = temp_altitude;
+        gnss_data.speed = temp_speed;
+        gnss_data.course = temp_course;
+        gnss_data.hdop = temp_hdop;
+        gnss_data.satellites = temp_satellites;
+        gnss_data.date = temp_date;
+        gnss_data.timestamp = temp_timestamp;
+        
+        AIR780EG_LOGD(TAG, "定位成功，更新位置信息 - Lat: %.6f, Lng: %.6f", 
+                      gnss_data.latitude, gnss_data.longitude);
+    }
+    else
+    {
+        // 定位未成功，只更新状态字段，保留位置信息
+        gnss_data.is_fixed = temp_is_fixed;
+        gnss_data.data_valid = temp_data_valid;
+        gnss_data.satellites = temp_satellites;
+        gnss_data.hdop = temp_hdop;
+        
+        // 如果之前有有效定位，保留位置信息
+        if (gnss_data.data_valid)
+        {
+            AIR780EG_LOGD(TAG, "定位未成功，保留上次位置信息 - Lat: %.6f, Lng: %.6f", 
+                          gnss_data.latitude, gnss_data.longitude);
+        }
+        else
+        {
+            AIR780EG_LOGD(TAG, "定位未成功，无历史位置信息");
         }
     }
 
