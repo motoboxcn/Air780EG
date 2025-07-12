@@ -43,7 +43,7 @@ private:
         unsigned long last_update;
         String location_type; // 定位类型：LBS、WIFI、GNSS
         bool data_valid; // 数据有效性，定位是否获取到
-    } gnss_data;
+    };
     unsigned long gnss_update_interval = 100; // 500ms
     unsigned long last_loop_time = 0;
     bool gnss_enabled = false;
@@ -57,6 +57,8 @@ private:
 
 public:
     Air780EGGNSS(Air780EGCore *core_instance);
+
+    GNSSData gnss_data;
 
     // GNSS控制
     bool enableGNSS();
