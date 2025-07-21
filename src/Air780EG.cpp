@@ -49,7 +49,12 @@ void Air780EG::loop() {
     }
     
     last_loop_time = current_time;
-    
+
+    // 检查到设备是否重启过 boot.rom
+    if (core.isBootRom()) {
+        AIR780EG_LOGI(TAG, "Device has been restarted");
+        core.initModem();
+    }
     
     // 调用各子模块的loop方法
     network.loop();

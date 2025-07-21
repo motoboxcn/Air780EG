@@ -17,6 +17,7 @@ private:
     unsigned long at_command_delay = 100; // AT指令间最小间隔
     
     bool initialized = false;
+    bool boot_rom = false;
     int power_pin = -1;
     
     // URC管理器
@@ -24,7 +25,6 @@ private:
     
     // 内部方法
     void clearSerialBuffer();
-    bool initModem();
     bool isAtReady();
     String readResponseUntilExpected(const String& expected_response,unsigned long timeout);
     String readLine(); // 读取一行数据
@@ -48,6 +48,9 @@ public:
     void powerOn();
     void powerOff();
     
+    // 初始化模块
+    bool initModem();
+
     // URC管理器访问
     void setURCManager(Air780EGURC* manager);
     Air780EGURC* getURCManager() const;
@@ -68,6 +71,9 @@ public:
     // 调试方法
     void enableEcho(bool enable = true);
     String getLastResponse() const;
+
+    // 检查设备是否重启过 boot.rom
+    bool isBootRom() const { return boot_rom; }
 };
 
 #endif // AIR780EG_CORE_H

@@ -47,43 +47,14 @@ bool Air780EGCore::begin(HardwareSerial *ser, int baudrate, int rx_pin, int tx_p
         serial->read();
     }
 
-    // 多次尝试AT测试
-    while (!isAtReady())
-    {
-        AIR780EG_LOGI(TAG, "Module not ready, retry...");
-        delay(1000);
-    }
-    AIR780EG_LOGI(TAG, "Module AT ready");
-    initialized = true;
-
-    /*
-+E_UTRAN Service
-
-+CGEV: ME PDN ACT 1
-
-+NITZ: 2025/07/10,15:54:58+0,0
-ATE0
-*/
-// 等待设备初始化完成信息，并捕捉设备时间，完成首次时间同步
-    while (serial->available())
-    {
-        String line = readLine();
-        if (line.indexOf("+E_UTRAN Service") >= 0)
-        {
-            AIR780EG_LOGI(TAG, "Device initialized");
-            break;
-        }
-    }
-
-    // 清空串口缓冲区
-    clearSerialBuffer();
-
     while (!initModem())
     {
         AIR780EG_LOGI(TAG, "Module initModem failed, retry...");
         delay(1000);
     }
     AIR780EG_LOGI(TAG, "Module initModem successfully");
+
+    boot_rom = false;
     return true;
 }
 
@@ -104,7 +75,36 @@ bool Air780EGCore::isAtReady()
 
 bool Air780EGCore::initModem()
 {
-    delay(2000);
+    // 多次尝试AT测试
+    while (!isAtReady())
+    {
+        AIR780EG_LOGI(TAG, "Module not ready, retry...");
+        delay(1000);
+    }
+    AIR780EG_LOGI(TAG, "Module AT ready");
+    initialized = true;
+
+    /*
++E_UTRAN Service
+
++CGEV: ME PDN ACT 1
+
++NITZ: 2025/07/10,15:54:58+0,0
+ATE0
+*/
+    // 等待设备初始化完成信息，并捕捉设备时间，完成首次时间同步
+    while (serial->available())
+    {
+        String line = readLine();
+        if (line.indexOf("+E_UTRAN Service") >= 0)
+        {
+            AIR780EG_LOGI(TAG, "Device initialized");
+            break;
+        }
+    }
+
+    // 清空串口缓冲区
+    clearSerialBuffer();
 
     // 关闭回显
     if (!sendATCommandBool("ATE0"))
@@ -198,7 +198,6 @@ bool Air780EGCore::initModem()
 bool Air780EGCore::isNetworkReadyCheck()
 {
 
-
     // CEREG 4G 注册状态
     // CGREG 2G 注册状态
     String response = sendATCommandWithResponse("AT+CEREG?", "OK", 5000);
@@ -239,7 +238,7 @@ bool Air780EGCore::isNetworkReadyCheck()
 bool Air780EGCore::waitExpectedResponse(const String &expected_response, unsigned long timeout)
 {
     unsigned long start_time = millis();
-    
+
     while (millis() - start_time < timeout)
     {
         // 检查串口是否有数据
@@ -251,14 +250,13 @@ bool Air780EGCore::waitExpectedResponse(const String &expected_response, unsigne
                 return true;
             }
         }
-        
+
         // 添加小延迟避免CPU占用过高
         delay(10);
     }
-    
+
     return false;
 }
-
 
 String Air780EGCore::readLine()
 {
@@ -322,11 +320,10 @@ String Air780EGCore::readResponse(unsigned long timeout)
             response += c;
 
             // 检查是否收到完整响应
-            if (response.endsWith("OK\r\n")||
-                response.endsWith("CONNECT OK\r\n")||
-                response.endsWith("SUBACK\r\n")||
-                response.endsWith("+MSUB:\r\n")
-            )
+            if (response.endsWith("OK\r\n") ||
+                response.endsWith("CONNECT OK\r\n") ||
+                response.endsWith("SUBACK\r\n") ||
+                response.endsWith("+MSUB:\r\n"))
                 break;
         }
         delay(1);
@@ -337,10 +334,16 @@ String Air780EGCore::readResponse(unsigned long timeout)
 
     // 优化日志输出，显示为输出模式
     AIR780EG_LOGV(TAG, "< %s", response.c_str());
+
+    // if respons has "boot.rom" shoud be reinit.
+    if (response.indexOf("boot.rom") >= 0)
+    {
+        boot_rom = true;
+    }
     return response;
 }
 
-String Air780EGCore::readResponseUntilExpected(const String& expected_response,unsigned long timeout)
+String Air780EGCore::readResponseUntilExpected(const String &expected_response, unsigned long timeout)
 {
     if (!serial)
         return "";
@@ -356,9 +359,8 @@ String Air780EGCore::readResponseUntilExpected(const String& expected_response,u
             response += c;
 
             // 检查是否收到完整响应
-            if (response.endsWith(expected_response)||
-                response.endsWith("ERROR\r\n")
-            )
+            if (response.endsWith(expected_response) ||
+                response.endsWith("ERROR\r\n"))
                 break;
         }
         delay(1);
@@ -371,7 +373,6 @@ String Air780EGCore::readResponseUntilExpected(const String& expected_response,u
     AIR780EG_LOGV(TAG, "< %s", response.c_str());
     return response;
 }
-
 
 String Air780EGCore::sendATCommand(const String &cmd, unsigned long timeout)
 {
@@ -409,7 +410,7 @@ String Air780EGCore::sendATCommand(const String &cmd, unsigned long timeout)
     return response;
 }
 
-String Air780EGCore::sendATCommandUntilExpected(const String& cmd, const String& expected_response, unsigned long timeout)
+String Air780EGCore::sendATCommandUntilExpected(const String &cmd, const String &expected_response, unsigned long timeout)
 {
     if (!serial || !initialized)
     {
@@ -466,13 +467,13 @@ String Air780EGCore::sendATCommandWithResponse(const String &cmd, const String &
                       expected_response.c_str(), response.c_str());
     }
 
-/*
-765	Invalid input value	无效输入值
-766	Unsupported mode	不支持的模式
-767	Operation failed	操作失败
-768	Mux already running	多路复用已经在运行
-769	Unable to get control	不能获得控制
-*/
+    /*
+    765	Invalid input value	无效输入值
+    766	Unsupported mode	不支持的模式
+    767	Operation failed	操作失败
+    768	Mux already running	多路复用已经在运行
+    769	Unable to get control	不能获得控制
+    */
     // 增加一个对结果的解析报错 比如 CME ERROR: 767 标识 操作失败
     if (response.indexOf("CME ERROR:") >= 0)
     {
@@ -573,7 +574,8 @@ int Air780EGCore::getCSQ()
     // 更准确的解析方法
     int start_pos = response.indexOf("+CSQ:") + 6; // 跳过 "+CSQ: "
     int end_pos = response.indexOf(",", start_pos);
-    if (start_pos > 5 && end_pos > start_pos) {
+    if (start_pos > 5 && end_pos > start_pos)
+    {
         int csq = response.substring(start_pos, end_pos).toInt();
         return csq;
     }

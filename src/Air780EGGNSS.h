@@ -46,7 +46,7 @@ private:
     Air780EGCore *core;
 
     
-    unsigned long gnss_update_interval = 100; // 500ms
+    unsigned long gnss_update_interval = 1000; // 1s
     unsigned long last_loop_time = 0;
     bool gnss_enabled = false;
     bool lbs_location_enabled = false;
