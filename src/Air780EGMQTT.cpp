@@ -384,7 +384,8 @@ void Air780EGMQTT::loop()
     // processMessageCache();
 
     // 处理接收到的数据，仅将URC特征的行传递给URC管理器
-    String response = core->readResponse(1000);
+    // 减少阻塞时间从1000ms到50ms
+    String response = core->readResponse(50);
     if (response.length() > 0)
     {
         handleMQTTURC(response);
@@ -398,7 +399,9 @@ void Air780EGMQTT::loop()
     if (millis() - last_check_time >= 5000)
     {
         last_check_time = millis();
-        String response = core->sendATCommandUntilExpected("AT+MQTTSTATU", "OK", 10000);
+        // 减少超时时间从10000ms到2000ms
+        String response = core->sendATCommandUntilExpected("AT+MQTTSTATU", "OK", 2000);
+        // String response = core->sendATCommand("AT+MQTTSTATU", 2000);
         if (response.indexOf("OK") >= 0)
         {
             // (0:offline,1:can pub,2: need MCONNECT!)
