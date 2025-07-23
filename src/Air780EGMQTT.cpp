@@ -260,24 +260,37 @@ bool Air780EGMQTT::publish(const String &topic, const String &payload, int qos, 
         AIR780EG_LOGE(TAG, "Not connected to MQTT server");
         return false;
     }
+    // 如果没有内容则不发送
+    if (payload.isEmpty()||payload.length()==0||payload == "{}")
+    {
+        AIR780EG_LOGW(TAG, "Payload is empty, skipping publish");
+        return true;
+    }
 
     // HEX模式下，payload转为HEX字符串
     String hex_payload = toHexString(payload);
     String pub_cmd = "AT+MPUB=\"" + topic + "\"," + String(qos) + "," + String(retain ? 1 : 0) + ",\"" + hex_payload + "\"";
     AIR780EG_LOGD(TAG, "Publishing HEX: %s", pub_cmd.c_str());
 
-    // 移除阻塞性delay，改为依赖AT指令间隔控制
-
+    // 使用同步方式发送MQTT发布命令（恢复原有行为）
     String response = core->sendATCommandUntilExpected(pub_cmd, "OK", 5000);
+    
     if (response.indexOf("OK") >= 0)
     {
         AIR780EG_LOGD(TAG, "Published message successfully");
         return true;
     }
-
-    AIR780EG_LOGE(TAG, "Failed to publish message, response: %s", response.c_str());
-    state = MQTT_ERROR;
-    return false;
+    else if (response.indexOf("ERROR") >= 0)
+    {
+        AIR780EG_LOGE(TAG, "Failed to publish message, response: %s", response.c_str());
+        state = MQTT_ERROR;
+        return false;
+    }
+    else
+    {
+        AIR780EG_LOGW(TAG, "MQTT publish timeout or no response");
+        return false;
+    }
 }
 
 bool Air780EGMQTT::publishJSON(const String &topic, const String &json, int qos)
@@ -381,16 +394,9 @@ void Air780EGMQTT::setConnectionCallback(MQTTConnectionCallback callback)
 
 void Air780EGMQTT::loop()
 {
-    // processMessageCache();
-
-    // 处理接收到的数据，仅将URC特征的行传递给URC管理器
-    // 减少阻塞时间从1000ms到50ms
-    String response = core->readResponse(50);
-    if (response.length() > 0)
-    {
-        handleMQTTURC(response);
-    }
-
+    // 注意：不再直接读取串口响应，因为现在由队列机制统一处理
+    // 真正的URC会由队列机制识别并通过回调分发到这里
+    
     // 处理定时任务
     processScheduledTasks();
 
@@ -468,14 +474,8 @@ void Air780EGMQTT::handleMQTTURC(const String &urc)
             parseMQTTMessage(urc);
         }
     }
-    else if (urc.startsWith("+CGNSINF:"))
-    {
-        // 收到GNSS信息
-        if (message_callback)
-        {
-            message_callback("GNSS", urc);
-        }
-    }
+    // 移除错误的GNSS处理 - GNSS响应应该由队列机制处理，不是URC
+    // +CGNSINF: 是AT+CGNSINF命令的响应，不是主动上报的URC
     else if (urc.indexOf("boot.rom") >= 0) // 确保设备供电正常
     {
         Serial.printf("确保设备供电正常，boot.rom: %s\n", urc.c_str());

@@ -157,8 +157,9 @@ String Air780EGGNSS::normalizeTime(const String &time)
 
 bool Air780EGGNSS::updateWIFILocation()
 {
-    // AT+WIFILOC=1,1 +WIFILOC: 0,31.1826152,120.6673126,2025/07/11,23:49:30 OK
+    // 使用同步方式发送WiFi定位命令（恢复原有行为）
     String response = core->sendATCommandUntilExpected("AT+WIFILOC=1,1", "OK", 30000);
+    
     if (response.indexOf("+WIFILOC:") >= 0)
     {
         AIR780EG_LOGD(TAG, "WIFI location retrieved: %s", response.c_str());
@@ -229,9 +230,14 @@ bool Air780EGGNSS::updateWIFILocation()
             return false;
         }
     }
+    else if (response.indexOf("ERROR") >= 0)
+    {
+        AIR780EG_LOGE(TAG, "WIFI location request failed: %s", response.c_str());
+        return false;
+    }
     else
     {
-        AIR780EG_LOGE(TAG, "Failed to get WIFI location");
+        AIR780EG_LOGE(TAG, "Failed to get WIFI location, unexpected response: %s", response.c_str());
         return false;
     }
 }
@@ -352,6 +358,12 @@ void Air780EGGNSS::loop()
 {
     if (!core || !core->isInitialized())
     {
+        return;
+    }
+
+    // 检查是否有阻塞命令正在执行（如WiFi定位）
+    if (core->isBlockingCommandActive()) {
+        // 阻塞命令执行期间，暂停GNSS更新避免串口冲突
         return;
     }
 

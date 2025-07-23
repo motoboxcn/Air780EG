@@ -56,6 +56,9 @@ void Air780EG::loop() {
         core.initModem();
     }
     
+    // 处理AT命令队列 - 这是关键的新增部分
+    core.processCommands();
+    
     // 调用各子模块的loop方法
     network.loop();
     gnss.loop();
