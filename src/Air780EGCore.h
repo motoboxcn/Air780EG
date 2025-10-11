@@ -53,6 +53,8 @@ private:
     bool is_blocking_command_active = false;
     String blocking_command_type = "";
     unsigned long blocking_command_start = 0;
+    static const unsigned long BLOCKING_COMMAND_TIMEOUT = 30000;  // 30秒超时
+    void checkBlockingCommandTimeout();
     
     // 内部方法
     void clearSerialBuffer();

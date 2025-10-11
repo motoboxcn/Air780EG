@@ -46,7 +46,7 @@ private:
     Air780EGCore *core;
 
     
-    unsigned long gnss_update_interval = 1000; // 1s
+    unsigned long gnss_update_interval = 3000; // 默认3秒，动态调整
     unsigned long last_loop_time = 0;
     bool gnss_enabled = false;
     bool lbs_location_enabled = false;
@@ -93,6 +93,7 @@ public:
     bool isEnabled() const;
     bool isDataValid() const;
     unsigned long getLastUpdateTime() const;
+    bool isBlockingCommandActive() const;  // 检查是否有阻塞命令正在执行
 
     // 调试方法
     void printGNSSInfo();

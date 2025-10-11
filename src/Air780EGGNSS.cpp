@@ -157,6 +157,13 @@ String Air780EGGNSS::normalizeTime(const String &time)
 
 bool Air780EGGNSS::updateWIFILocation()
 {
+    // 检查是否有阻塞命令正在执行
+    if (core->isBlockingCommandActive()) {
+        AIR780EG_LOGW(TAG, "Another blocking command is active, skipping WIFI location");
+        return false;
+    }
+
+    AIR780EG_LOGD(TAG, "开始WiFi定位...");
     // 使用同步方式发送WiFi定位命令（恢复原有行为）
     String response = core->sendATCommandUntilExpected("AT+WIFILOC=1,1", "OK", 30000);
     
@@ -222,32 +229,46 @@ bool Air780EGGNSS::updateWIFILocation()
             AIR780EG_LOGD(TAG, "WIFI data parsed - Lat: %.6f, Lng: %.6f, Date: %s, Time: %s",
                           gnss_data.latitude, gnss_data.longitude,
                           gnss_data.date.c_str(), gnss_data.timestamp.c_str());
+            AIR780EG_LOGD(TAG, "WiFi定位完成，结果: 成功");
             return true;
         }
         else
         {
             AIR780EG_LOGE(TAG, "Failed to parse WIFI data - invalid coordinates");
+            AIR780EG_LOGD(TAG, "WiFi定位完成，结果: 失败 - 数据解析错误");
             return false;
         }
     }
     else if (response.indexOf("ERROR") >= 0)
     {
         AIR780EG_LOGE(TAG, "WIFI location request failed: %s", response.c_str());
+        AIR780EG_LOGD(TAG, "WiFi定位完成，结果: 失败 - 命令错误");
         return false;
     }
     else
     {
         AIR780EG_LOGE(TAG, "Failed to get WIFI location, unexpected response: %s", response.c_str());
+        AIR780EG_LOGD(TAG, "WiFi定位完成，结果: 失败 - 超时或无效响应");
         return false;
     }
 }
 
 bool Air780EGGNSS::updateLBS()
 {
-    if (lbs_location_enabled)
-    {
-        // AT+CIPGSMLOC=1,1 +CIPGSMLOC: 0,31.1826152,120.6673126,2025/07/11,23:38:22 OK
-        String response = core->sendATCommandUntilExpected("AT+CIPGSMLOC=1,1", "OK", 30000);
+    if (!lbs_location_enabled) {
+        AIR780EG_LOGD(TAG, "LBS定位未启用");
+        return false;
+    }
+
+    // 检查是否有阻塞命令正在执行
+    if (core->isBlockingCommandActive()) {
+        AIR780EG_LOGW(TAG, "Another blocking command is active, skipping LBS location");
+        return false;
+    }
+
+    AIR780EG_LOGD(TAG, "开始LBS定位...");
+    // AT+CIPGSMLOC=1,1 +CIPGSMLOC: 0,31.1826152,120.6673126,2025/07/11,23:38:22 OK
+    String response = core->sendATCommandUntilExpected("AT+CIPGSMLOC=1,1", "OK", 30000);
         if (response.indexOf("+CIPGSMLOC:") >= 0)
         {
             AIR780EG_LOGI(TAG, "GSM location retrieved: %s", response.c_str());
@@ -310,24 +331,22 @@ bool Air780EGGNSS::updateLBS()
                 AIR780EG_LOGD(TAG, "LBS data parsed - Lat: %.6f, Lng: %.6f, Date: %s, Time: %s",
                               gnss_data.latitude, gnss_data.longitude,
                               gnss_data.date.c_str(), gnss_data.timestamp.c_str());
+                AIR780EG_LOGD(TAG, "LBS定位完成，结果: 成功");
                 return true;
             }
             else
             {
                 AIR780EG_LOGE(TAG, "Failed to parse LBS data - invalid coordinates");
+                AIR780EG_LOGD(TAG, "LBS定位完成，结果: 失败 - 数据解析错误");
                 return false;
             }
         }
         else
         {
             AIR780EG_LOGE(TAG, "Failed to get GSM location");
+            AIR780EG_LOGD(TAG, "LBS定位完成，结果: 失败 - 命令错误");
             return false;
         }
-    }
-    else
-    {
-        return false;
-    }
 }
 
 bool Air780EGGNSS::disableGNSS()
@@ -369,12 +388,17 @@ void Air780EGGNSS::loop()
 
     unsigned long current_time = millis();
 
+    // 根据GNSS状态动态调整查询间隔
+    unsigned long interval = gnss_data.data_valid ? 3000 : 10000; // 有效时3秒，无效时10秒
+    
     // 检查是否需要更新GNSS数据
-    if (current_time - last_loop_time >= gnss_update_interval)
+    if (current_time - last_loop_time >= interval)
     {
         // 当gnss 信号丢失的时候，通过LBS辅助定位
         if (gnss_enabled)
         {
+            AIR780EG_LOGD(TAG, "GNSS查询间隔: %lu ms (状态: %s)", 
+                         interval, gnss_data.data_valid ? "有效" : "无效");
             updateGNSSData();
         }
 
@@ -638,6 +662,11 @@ String Air780EGGNSS::getDate()
 bool Air780EGGNSS::isEnabled() const
 {
     return gnss_enabled;
+}
+
+bool Air780EGGNSS::isBlockingCommandActive() const
+{
+    return core ? core->isBlockingCommandActive() : false;
 }
 
 bool Air780EGGNSS::isDataValid() const

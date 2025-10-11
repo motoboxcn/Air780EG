@@ -421,7 +421,7 @@ String Air780EGCore::sendATCommandUntilExpected(const String &cmd, const String 
     // 检查是否有阻塞命令正在执行
     if (is_blocking_command_active && getCommandType(cmd) != blocking_command_type)
     {
-        AIR780EG_LOGW(TAG, "Blocking command %s is active, rejecting command: %s", 
+        AIR780EG_LOGD(TAG, "Blocking command %s is active, rejecting command: %s", 
                       blocking_command_type.c_str(), cmd.c_str());
         return "BLOCKED";
     }
@@ -658,10 +658,23 @@ bool Air780EGCore::sendATCommandAsync(const String& cmd, const String& expected_
     return true;
 }
 
+void Air780EGCore::checkBlockingCommandTimeout() {
+    if (is_blocking_command_active && 
+        (millis() - blocking_command_start >= BLOCKING_COMMAND_TIMEOUT)) {
+        AIR780EG_LOGD(TAG, "Blocking command %s timed out after %lu ms", 
+                      blocking_command_type.c_str(), BLOCKING_COMMAND_TIMEOUT);
+        clearBlockingCommand();
+    }
+}
+
 void Air780EGCore::processCommands() {
+    // 检查阻塞命令超时
+    checkBlockingCommandTimeout();
+    
     // 处理当前命令
     if (current_command != nullptr) {
         if (executeCurrentCommand()) {
+            AIR780EG_LOGI(TAG, "Current command completed: %s", current_command->command.c_str());
             // 当前命令完成，清理
             delete current_command;
             current_command = nullptr;
