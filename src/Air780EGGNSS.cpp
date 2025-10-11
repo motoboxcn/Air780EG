@@ -402,10 +402,12 @@ void Air780EGGNSS::loop()
             updateGNSSData();
         }
 
-        // 补充定位
-        // GNSS信号丢失时不自动调用WiFi/LBS定位，避免串口冲突
-        // 用户需要根据业务需求手动调用 updateWIFILocation() 或 updateLBS()
-        if (gnss_data.data_valid == false)
+        // 兜底定位逻辑，会导致串口通讯不可用，阻塞 AT 指令；
+        if (fallbackConfig.enabled && gnss_data.data_valid == false)
+        {
+            handleFallbackLocation();
+        }
+        else if (gnss_data.data_valid == false)
         {
             AIR780EG_LOGD(TAG, "GNSS signal lost. Manual WiFi/LBS location available if needed.");
         }
@@ -726,11 +728,6 @@ String Air780EGGNSS::getLocationJSON()
     doc["satellites"] = gnss_data.satellites;
     return doc.as<String>();
 }
-// 检查GNSS信号是否丢失
-bool Air780EGGNSS::isGNSSSignalLost()
-{
-    return !gnss_data.data_valid || !gnss_data.is_fixed;
-}
 
 // 获取当前位置来源
 String Air780EGGNSS::getLocationSource()
@@ -742,4 +739,152 @@ String Air780EGGNSS::getLocationSource()
 unsigned long Air780EGGNSS::getLastLocationTime()
 {
     return gnss_data.last_update;
+}
+
+// 配置兜底定位
+void Air780EGGNSS::configureFallbackLocation(bool enable, unsigned long gnss_timeout,
+                                            unsigned long lbs_interval, unsigned long wifi_interval,
+                                            bool prefer_wifi) {
+    fallbackConfig.enabled = enable;
+    fallbackConfig.gnss_timeout = gnss_timeout;
+    fallbackConfig.lbs_interval = lbs_interval;
+    fallbackConfig.wifi_interval = wifi_interval;
+    fallbackConfig.prefer_wifi_over_lbs = prefer_wifi;
+    
+    // 设置初始时间为较早的时间，确保启动后能立即尝试定位
+    unsigned long currentTime = millis();
+    fallbackConfig.last_lbs_time = currentTime - lbs_interval;  // 设置为"已经过了间隔时间"
+    fallbackConfig.last_wifi_time = currentTime - wifi_interval; // 设置为"已经过了间隔时间"
+    
+    AIR780EG_LOGI(TAG, "兜底定位配置: %s, GNSS超时:%lus, LBS间隔:%lus, WiFi间隔:%lus, 优先WiFi:%s, 启动时立即尝试定位",
+                  enable ? "启用" : "禁用",
+                  gnss_timeout/1000,
+                  lbs_interval/1000,
+                  wifi_interval/1000,
+                  prefer_wifi ? "是" : "否");
+}
+
+// 处理兜底定位逻辑
+void Air780EGGNSS::handleFallbackLocation() {
+    if (!fallbackConfig.enabled) {
+        return;
+    }
+    
+    unsigned long currentTime = millis();
+    
+    // 检查GNSS信号是否丢失
+    if (!isGNSSSignalLost()) {
+        // GNSS信号正常，不需要兜底
+        return;
+    }
+    
+    // 检查是否有阻塞命令正在执行
+    if (core->isBlockingCommandActive()) {
+        AIR780EG_LOGD(TAG, "有阻塞命令正在执行，跳过兜底定位");
+        return;
+    }
+    
+    AIR780EG_LOGD(TAG, "兜底定位配置: 优先%s, WiFi间隔: %lu秒, LBS间隔: %lu秒", 
+                  fallbackConfig.prefer_wifi_over_lbs ? "WiFi" : "LBS",
+                  fallbackConfig.wifi_interval/1000,
+                  fallbackConfig.lbs_interval/1000);
+    
+    if (fallbackConfig.prefer_wifi_over_lbs) {
+        // 检查是否达到WiFi定位间隔
+        unsigned long wifi_elapsed = currentTime - fallbackConfig.last_wifi_time;
+        AIR780EG_LOGD(TAG, "距离上次WiFi定位: %lu秒 (间隔: %lu秒)", 
+                      wifi_elapsed/1000, fallbackConfig.wifi_interval/1000);
+        
+        if (wifi_elapsed >= fallbackConfig.wifi_interval) {
+            AIR780EG_LOGI(TAG, "尝试WiFi定位...");
+            bool wifi_success = updateWIFILocation();
+            AIR780EG_LOGD(TAG, "WiFi定位结果: %s", wifi_success ? "成功" : "失败");
+            
+            // 无论成功失败都要更新时间戳，避免重复执行
+            fallbackConfig.last_wifi_time = currentTime;
+            
+            // 只有在WiFi定位失败且达到LBS间隔时才尝试LBS
+            if (!wifi_success) {
+                unsigned long lbs_elapsed = currentTime - fallbackConfig.last_lbs_time;
+                AIR780EG_LOGD(TAG, "WiFi定位失败，距离上次LBS定位: %lu秒 (间隔: %lu秒)", 
+                             lbs_elapsed/1000, fallbackConfig.lbs_interval/1000);
+                
+                if (lbs_elapsed >= fallbackConfig.lbs_interval) {
+                    AIR780EG_LOGI(TAG, "WiFi定位失败，尝试LBS定位");
+                    bool lbs_success = updateLBS();
+                    AIR780EG_LOGD(TAG, "LBS定位结果: %s", lbs_success ? "成功" : "失败");
+                    
+                    // 无论成功失败都要更新时间戳
+                    fallbackConfig.last_lbs_time = currentTime;
+                }
+            }
+        }
+    } else {
+        // 检查是否达到LBS定位间隔
+        unsigned long lbs_elapsed = currentTime - fallbackConfig.last_lbs_time;
+        AIR780EG_LOGD(TAG, "距离上次LBS定位: %lu秒 (间隔: %lu秒)", 
+                      lbs_elapsed/1000, fallbackConfig.lbs_interval/1000);
+        
+        if (lbs_elapsed >= fallbackConfig.lbs_interval) {
+            AIR780EG_LOGI(TAG, "尝试LBS定位...");
+            bool lbs_success = updateLBS();
+            AIR780EG_LOGD(TAG, "LBS定位结果: %s", lbs_success ? "成功" : "失败");
+            
+            // 无论成功失败都要更新时间戳，避免重复执行
+            fallbackConfig.last_lbs_time = currentTime;
+            
+            // 只有在LBS定位失败且达到WiFi间隔时才尝试WiFi
+            if (!lbs_success) {
+                unsigned long wifi_elapsed = currentTime - fallbackConfig.last_wifi_time;
+                AIR780EG_LOGD(TAG, "LBS定位失败，距离上次WiFi定位: %lu秒 (间隔: %lu秒)", 
+                             wifi_elapsed/1000, fallbackConfig.wifi_interval/1000);
+                
+                if (wifi_elapsed >= fallbackConfig.wifi_interval) {
+                    AIR780EG_LOGI(TAG, "LBS定位失败，尝试WiFi定位");
+                    bool wifi_success = updateWIFILocation();
+                    AIR780EG_LOGD(TAG, "WiFi定位结果: %s", wifi_success ? "成功" : "失败");
+                    
+                    // 无论成功失败都要更新时间戳
+                    fallbackConfig.last_wifi_time = currentTime;
+                }
+            }
+        }
+    }
+}
+
+// 检查GNSS信号是否丢失
+bool Air780EGGNSS::isGNSSSignalLost() {
+    if (!gnss_enabled) {
+        AIR780EG_LOGD(TAG, "GNSS信号丢失: GNSS功能未启用");
+        return true;
+    }
+    
+    // 检查GNSS数据的时效性
+    unsigned long currentTime = millis();
+    
+    // 如果数据无效或超过超时时间，认为信号丢失
+    if (!gnss_data.data_valid || !gnss_data.is_fixed) {
+        AIR780EG_LOGD(TAG, "GNSS信号丢失: 数据无效或未定位 (data_valid: %d, is_fixed: %d)", 
+                      gnss_data.data_valid, gnss_data.is_fixed);
+        return true;
+    }
+    
+    // 检查数据是否过期
+    unsigned long elapsed = currentTime - gnss_data.last_update;
+    if (elapsed > fallbackConfig.gnss_timeout) {
+        AIR780EG_LOGD(TAG, "GNSS信号丢失: 数据过期 (已过 %lu秒, 超时: %lu秒)", 
+                      elapsed/1000, fallbackConfig.gnss_timeout/1000);
+        return true;
+    }
+    
+    // 检查定位类型是否为GNSS
+    if (gnss_data.location_type != "GNSS") {
+        AIR780EG_LOGD(TAG, "GNSS信号丢失: 定位类型不是GNSS (当前: %s)", 
+                      gnss_data.location_type.c_str());
+        return true;
+    }
+    
+    AIR780EG_LOGD(TAG, "GNSS信号正常: 类型=%s, 卫星数=%d, 更新时间=%lu秒前", 
+                  gnss_data.location_type.c_str(), gnss_data.satellites, elapsed/1000);
+    return false;
 }

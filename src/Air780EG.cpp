@@ -13,7 +13,16 @@ Air780EG::~Air780EG() {
 }
 
 bool Air780EG::begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pin, int power_pin) {
+    // 使用默认配置
+    Air780EGConfig defaultConfig;
+    return begin(serial, baudrate, rx_pin, tx_pin, power_pin, defaultConfig);
+}
+
+bool Air780EG::begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pin, int power_pin, const Air780EGConfig& config) {
     AIR780EG_LOGI(TAG, "Initializing Air780EG module...");
+    
+    // 保存配置
+    this->config = config;
     
     // 初始化核心模块
     if (!core.begin(serial, baudrate, rx_pin, tx_pin, power_pin)) {
@@ -30,8 +39,31 @@ bool Air780EG::begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pi
         return false;
     }
     
+    // 根据配置启用功能模块
+    if (config.enableGNSS) {
+        AIR780EG_LOGI(TAG, "Enabling GNSS module...");
+        gnss.enableGNSS();
+        
+        // 配置兜底定位
+        if (config.enableFallbackLocation) {
+            AIR780EG_LOGI(TAG, "Configuring fallback location...");
+            gnss.configureFallbackLocation(
+                config.enableFallbackLocation,
+                config.gnss_timeout,
+                config.lbs_interval,
+                config.wifi_interval,
+                config.prefer_wifi_over_lbs
+            );
+        }
+    }
+    
     initialized = true;
     AIR780EG_LOGI(TAG, "Air780EG module initialized successfully");
+    AIR780EG_LOGI(TAG, "Features enabled - GSM:%s, MQTT:%s, GNSS:%s, Fallback:%s", 
+                  config.enableGSM ? "Yes" : "No",
+                  config.enableMQTT ? "Yes" : "No", 
+                  config.enableGNSS ? "Yes" : "No",
+                  config.enableFallbackLocation ? "Yes" : "No");
     return true;
 }
 
@@ -99,6 +131,15 @@ void Air780EG::setLoopInterval(unsigned long interval_ms) {
 
 unsigned long Air780EG::getLoopInterval() const {
     return loop_interval;
+}
+
+void Air780EG::setConfig(const Air780EGConfig& config) {
+    this->config = config;
+    AIR780EG_LOGI(TAG, "Configuration updated");
+}
+
+const Air780EGConfig& Air780EG::getConfig() const {
+    return config;
 }
 
 void Air780EG::setLogLevel(Air780EGLogLevel level) {

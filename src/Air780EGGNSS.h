@@ -48,6 +48,17 @@ private:
     
     unsigned long gnss_update_interval = 3000; // 默认3秒，动态调整
     unsigned long last_loop_time = 0;
+    
+    // 兜底定位配置
+    struct FallbackConfig {
+        bool enabled = false;
+        unsigned long gnss_timeout = 15000;      // GNSS信号丢失超时时间(ms)
+        unsigned long wifi_interval = 120000;    // WiFi定位间隔(ms)
+        unsigned long lbs_interval = 60000;      // LBS定位间隔(ms)
+        bool prefer_wifi_over_lbs = true;        // 是否优先使用WiFi定位
+        unsigned long last_wifi_time = 0;        // 上次WiFi定位时间
+        unsigned long last_lbs_time = 0;         // 上次LBS定位时间
+    } fallbackConfig;
     bool gnss_enabled = false;
     bool lbs_location_enabled = false;
 
@@ -70,8 +81,14 @@ public:
     bool updateLBS();           // 基站定位，会阻塞最多30秒
     bool updateWIFILocation();  // WiFi定位，会阻塞最多30秒
     
+    // 兜底定位配置
+    void configureFallbackLocation(bool enable, unsigned long gnss_timeout,
+                                  unsigned long lbs_interval, unsigned long wifi_interval,
+                                  bool prefer_wifi);
+    void handleFallbackLocation();
+    bool isGNSSSignalLost();
+    
     // 定位状态查询
-    bool isGNSSSignalLost();    // 检查GNSS信号是否丢失
     String getLocationSource(); // 获取当前位置来源 ("GNSS", "WiFi", "LBS")
     unsigned long getLastLocationTime(); // 获取最后定位时间
 

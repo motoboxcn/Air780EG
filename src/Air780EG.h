@@ -17,6 +17,23 @@
 #define AIR780EG_VERSION_PATCH 0
 #define AIR780EG_VERSION_STRING "1.0.0"
 
+// 配置结构
+struct Air780EGConfig {
+    // 基础功能
+    bool enableGSM = true;           // 启用GSM/GPRS通讯
+    bool enableMQTT = true;          // 启用MQTT通讯
+    
+    // 定位功能
+    bool enableGNSS = false;         // 启用GNSS定位
+    bool enableFallbackLocation = false; // 启用WiFi/LBS兜底定位
+    
+    // 兜底定位配置
+    unsigned long gnss_timeout = 15000;      // GNSS信号丢失超时时间(ms)
+    unsigned long wifi_interval = 120000;    // WiFi定位间隔(ms)
+    unsigned long lbs_interval = 60000;      // LBS定位间隔(ms)
+    bool prefer_wifi_over_lbs = true;        // 是否优先使用WiFi定位
+};
+
 class Air780EG {
 private:
     static const char* TAG;
@@ -29,6 +46,7 @@ private:
     bool initialized = false;
     unsigned long last_loop_time = 0;
     unsigned long loop_interval = 100; // 主循环间隔
+    Air780EGConfig config; // 功能配置
     
 public:
     Air780EG();
@@ -36,6 +54,7 @@ public:
     
     // 初始化方法
     bool begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pin, int power_pin);
+    bool begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pin, int power_pin, const Air780EGConfig& config);
     
     // 主循环 - 必须在loop()中调用
     void loop();
@@ -55,6 +74,10 @@ public:
     // 配置方法
     void setLoopInterval(unsigned long interval_ms);
     unsigned long getLoopInterval() const;
+    
+    // 功能配置
+    void setConfig(const Air780EGConfig& config);
+    const Air780EGConfig& getConfig() const;
     
     // 调试配置
     static void setLogLevel(Air780EGLogLevel level);
