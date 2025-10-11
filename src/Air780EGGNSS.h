@@ -20,6 +20,20 @@ AT+CGNSDEL删除 EPO 文件
 AT+CGNSSEQ定义 NMEA 解析
 */
 
+// GPS时间信息结构
+typedef struct
+{
+    int year;        // 年份 (如: 2025)
+    int month;       // 月份 (1-12)
+    int day;         // 日期 (1-31)
+    int hour;        // 小时 (0-23)
+    int minute;      // 分钟 (0-59)
+    int second;      // 秒 (0-59)
+    int millisecond; // 毫秒 (0-999)
+    bool valid;      // 时间是否有效
+    unsigned long last_update; // 最后更新时间
+} gps_time_t;
+
 // 缓存的GNSS数据
 typedef struct
 {
@@ -31,11 +45,10 @@ typedef struct
     float course; // 度
     int satellites;
     float hdop;       // 水平精度因子
-    String timestamp; // UTC时间
-    String date;      // UTC日期
     unsigned long last_update;
     String location_type; // 定位类型：LBS、WIFI、GNSS
     bool data_valid; // 数据有效性，定位是否获取到
+    gps_time_t gps_time; // GPS时间信息
 } gnss_data_t;
 
 class Air780EGGNSS
@@ -67,6 +80,7 @@ private:
     bool parseGNSSResponse(const String &response);
     String normalizeDate(const String &date);
     String normalizeTime(const String &time);
+    void parseGPSTime(const String &date_part, const String &time_part);
 
 public:
     Air780EGGNSS(Air780EGCore *core_instance);
@@ -103,8 +117,11 @@ public:
     float getCourse();
     int getSatelliteCount();
     float getHDOP();
-    String getTimestamp();
-    String getDate();
+    
+    // GPS时间获取
+    gps_time_t getGPSTime(); // 获取GPS时间信息
+    String getGPSTimeString(); // 获取格式化的GPS时间字符串
+    bool isGPSTimeValid(); // 检查GPS时间是否有效
 
     // 状态查询
     bool isEnabled() const;

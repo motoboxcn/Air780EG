@@ -13,10 +13,19 @@ Air780EGGNSS::Air780EGGNSS(Air780EGCore *core_instance) : core(core_instance)
     gnss_data.course = 0.0;
     gnss_data.satellites = 0;
     gnss_data.hdop = 0.0;
-    gnss_data.timestamp = "";
-    gnss_data.date = "";
     gnss_data.last_update = 0;
     gnss_data.data_valid = false;
+    
+    // 初始化GPS时间
+    gnss_data.gps_time.year = 0;
+    gnss_data.gps_time.month = 0;
+    gnss_data.gps_time.day = 0;
+    gnss_data.gps_time.hour = 0;
+    gnss_data.gps_time.minute = 0;
+    gnss_data.gps_time.second = 0;
+    gnss_data.gps_time.millisecond = 0;
+    gnss_data.gps_time.valid = false;
+    gnss_data.gps_time.last_update = 0;
 }
 
 bool Air780EGGNSS::enableGNSS()
@@ -155,6 +164,61 @@ String Air780EGGNSS::normalizeTime(const String &time)
     return normalized;
 }
 
+// 解析GPS时间信息
+void Air780EGGNSS::parseGPSTime(const String &date_part, const String &time_part)
+{
+    // 解析日期部分 YYYYMMDD
+    if (date_part.length() >= 8) {
+        gnss_data.gps_time.year = date_part.substring(0, 4).toInt();
+        gnss_data.gps_time.month = date_part.substring(4, 6).toInt();
+        gnss_data.gps_time.day = date_part.substring(6, 8).toInt();
+    } else {
+        gnss_data.gps_time.year = 0;
+        gnss_data.gps_time.month = 0;
+        gnss_data.gps_time.day = 0;
+    }
+    
+    // 解析时间部分 HHMMSS.sss
+    if (time_part.length() >= 6) {
+        gnss_data.gps_time.hour = time_part.substring(0, 2).toInt();
+        gnss_data.gps_time.minute = time_part.substring(2, 4).toInt();
+        gnss_data.gps_time.second = time_part.substring(4, 6).toInt();
+        
+        // 解析毫秒部分（如果存在）
+        if (time_part.length() > 7 && time_part.charAt(6) == '.') {
+            String ms_str = time_part.substring(7);
+            // 取前3位作为毫秒
+            if (ms_str.length() >= 3) {
+                gnss_data.gps_time.millisecond = ms_str.substring(0, 3).toInt();
+            } else {
+                gnss_data.gps_time.millisecond = ms_str.toInt() * (1000 / pow(10, ms_str.length()));
+            }
+        } else {
+            gnss_data.gps_time.millisecond = 0;
+        }
+    } else {
+        gnss_data.gps_time.hour = 0;
+        gnss_data.gps_time.minute = 0;
+        gnss_data.gps_time.second = 0;
+        gnss_data.gps_time.millisecond = 0;
+    }
+    
+    // 验证时间有效性
+    gnss_data.gps_time.valid = (gnss_data.gps_time.year >= 2020 && gnss_data.gps_time.year <= 2030 &&
+                               gnss_data.gps_time.month >= 1 && gnss_data.gps_time.month <= 12 &&
+                               gnss_data.gps_time.day >= 1 && gnss_data.gps_time.day <= 31 &&
+                               gnss_data.gps_time.hour >= 0 && gnss_data.gps_time.hour <= 23 &&
+                               gnss_data.gps_time.minute >= 0 && gnss_data.gps_time.minute <= 59 &&
+                               gnss_data.gps_time.second >= 0 && gnss_data.gps_time.second <= 59);
+    
+    gnss_data.gps_time.last_update = millis();
+    
+    AIR780EG_LOGD(TAG, "GPS时间解析: %04d-%02d-%02d %02d:%02d:%02d.%03d (有效: %s)", 
+                  gnss_data.gps_time.year, gnss_data.gps_time.month, gnss_data.gps_time.day,
+                  gnss_data.gps_time.hour, gnss_data.gps_time.minute, gnss_data.gps_time.second, gnss_data.gps_time.millisecond,
+                  gnss_data.gps_time.valid ? "是" : "否");
+}
+
 bool Air780EGGNSS::updateWIFILocation()
 {
     // 检查是否有阻塞命令正在执行
@@ -215,8 +279,6 @@ bool Air780EGGNSS::updateWIFILocation()
         {
             gnss_data.latitude = latitude.toDouble();
             gnss_data.longitude = longitude.toDouble();
-            gnss_data.date = normalizeDate(date);
-            gnss_data.timestamp = normalizeTime(time);
             gnss_data.data_valid = true;
             gnss_data.is_fixed = true;
             gnss_data.satellites = 0; // WIFI没有卫星信息
@@ -226,9 +288,8 @@ bool Air780EGGNSS::updateWIFILocation()
             gnss_data.course = 0.0;   // WIFI没有航向信息
             gnss_data.last_update = millis();
             gnss_data.location_type = "WIFI";
-            AIR780EG_LOGD(TAG, "WIFI data parsed - Lat: %.6f, Lng: %.6f, Date: %s, Time: %s",
-                          gnss_data.latitude, gnss_data.longitude,
-                          gnss_data.date.c_str(), gnss_data.timestamp.c_str());
+            AIR780EG_LOGD(TAG, "WIFI data parsed - Lat: %.6f, Lng: %.6f",
+                          gnss_data.latitude, gnss_data.longitude);
             AIR780EG_LOGD(TAG, "WiFi定位完成，结果: 成功");
             return true;
         }
@@ -317,8 +378,6 @@ bool Air780EGGNSS::updateLBS()
             {
                 gnss_data.latitude = latitude.toDouble();
                 gnss_data.longitude = longitude.toDouble();
-                gnss_data.date = normalizeDate(date);
-                gnss_data.timestamp = normalizeTime(time);
                 gnss_data.data_valid = true;
                 gnss_data.is_fixed = true;
                 gnss_data.satellites = 0; // LBS没有卫星信息
@@ -328,9 +387,8 @@ bool Air780EGGNSS::updateLBS()
                 gnss_data.course = 0.0;   // LBS没有航向信息
                 gnss_data.last_update = millis();
                 gnss_data.location_type = "LBS";
-                AIR780EG_LOGD(TAG, "LBS data parsed - Lat: %.6f, Lng: %.6f, Date: %s, Time: %s",
-                              gnss_data.latitude, gnss_data.longitude,
-                              gnss_data.date.c_str(), gnss_data.timestamp.c_str());
+                AIR780EG_LOGD(TAG, "LBS data parsed - Lat: %.6f, Lng: %.6f",
+                              gnss_data.latitude, gnss_data.longitude);
                 AIR780EG_LOGD(TAG, "LBS定位完成，结果: 成功");
                 return true;
             }
@@ -480,8 +538,6 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
     float temp_course = 0.0;
     float temp_hdop = 0.0;
     int temp_satellites = 0;
-    String temp_date = "";
-    String temp_timestamp = "";
 
     // 解析逗号分隔的字段
     int field_count = 0;
@@ -513,9 +569,8 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
                     String date_part = field.substring(0, 8);   // YYYYMMDD
                     String time_part = field.substring(8); // HHMMSS.sss
                     
-                    // 标准化日期和时间格式
-                    temp_date = normalizeDate(date_part);
-                    temp_timestamp = normalizeTime(time_part);
+                    // 解析GPS时间信息
+                    parseGPSTime(date_part, time_part);
                 }
                 break;
             case 3: // 纬度
@@ -586,8 +641,6 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
         gnss_data.course = temp_course;
         gnss_data.hdop = temp_hdop;
         gnss_data.satellites = temp_satellites;
-        gnss_data.date = temp_date;
-        gnss_data.timestamp = temp_timestamp;
         
         AIR780EG_LOGD(TAG, "定位成功，更新位置信息 - Lat: %.6f, Lng: %.6f", 
                       gnss_data.latitude, gnss_data.longitude);
@@ -655,15 +708,6 @@ float Air780EGGNSS::getHDOP()
     return gnss_data.hdop;
 }
 
-String Air780EGGNSS::getTimestamp()
-{
-    return gnss_data.timestamp;
-}
-
-String Air780EGGNSS::getDate()
-{
-    return gnss_data.date;
-}
 
 bool Air780EGGNSS::isEnabled() const
 {
@@ -697,8 +741,11 @@ void Air780EGGNSS::printGNSSInfo()
     AIR780EG_LOGI(TAG, "Speed: %.2f km/h", gnss_data.speed);
     AIR780EG_LOGI(TAG, "Course: %.2f°", gnss_data.course);
     AIR780EG_LOGI(TAG, "HDOP: %.2f", gnss_data.hdop);
-    AIR780EG_LOGI(TAG, "Date: %s", gnss_data.date.c_str());
-    AIR780EG_LOGI(TAG, "Time: %s", gnss_data.timestamp.c_str());
+    if (gnss_data.gps_time.valid) {
+        AIR780EG_LOGI(TAG, "GPS Time: %s", getGPSTimeString().c_str());
+    } else {
+        AIR780EG_LOGI(TAG, "GPS Time: Invalid");
+    }
     AIR780EG_LOGI(TAG, "Last Update: %lu ms ago", millis() - gnss_data.last_update);
     AIR780EG_LOGI(TAG, "======================");
 }
@@ -722,14 +769,20 @@ String Air780EGGNSS::getLocationJSON()
     doc["speed"] = gnss_data.speed;
     doc["course"] = gnss_data.course;
     doc["hdop"] = gnss_data.hdop;
-    doc["date"] = gnss_data.date;
-    doc["timestamp"] = gnss_data.timestamp;
     doc["location_type"] = gnss_data.location_type;
     doc["satellites"] = gnss_data.satellites;
     doc["is_fixed"] = gnss_data.is_fixed;
     doc["data_valid"] = gnss_data.data_valid;
-    doc["location_type"] = gnss_data.location_type;
-    doc["satellites"] = gnss_data.satellites;
+    
+    // 添加GPS时间信息
+    if (gnss_data.gps_time.valid) {
+        doc["gps_time"] = getGPSTimeString();
+        doc["gps_time_valid"] = true;
+    } else {
+        doc["gps_time"] = "Invalid";
+        doc["gps_time_valid"] = false;
+    }
+    
     return doc.as<String>();
 }
 
@@ -917,5 +970,30 @@ bool Air780EGGNSS::isGNSSSignalLost() {
     AIR780EG_LOGD(TAG, "GNSS信号正常: 类型=%s, 卫星数=%d, 更新时间=%lu秒前", 
                   gnss_data.location_type.c_str(), gnss_data.satellites, elapsed/1000);
     return false;
+}
+
+// GPS时间获取方法
+gps_time_t Air780EGGNSS::getGPSTime()
+{
+    return gnss_data.gps_time;
+}
+
+String Air780EGGNSS::getGPSTimeString()
+{
+    if (!gnss_data.gps_time.valid) {
+        return "Invalid GPS Time";
+    }
+    
+    char time_str[32];
+    snprintf(time_str, sizeof(time_str), "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+             gnss_data.gps_time.year, gnss_data.gps_time.month, gnss_data.gps_time.day,
+             gnss_data.gps_time.hour, gnss_data.gps_time.minute, gnss_data.gps_time.second, gnss_data.gps_time.millisecond);
+    
+    return String(time_str);
+}
+
+bool Air780EGGNSS::isGPSTimeValid()
+{
+    return gnss_data.gps_time.valid;
 }
 
