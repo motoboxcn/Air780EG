@@ -5,6 +5,8 @@ Air780EG是一个功能完整的Arduino库，专为Air780EG 4G+GNSS模块设计�
 ## 特性
 
 - **分层架构设计**：核心AT指令层、网络管理层、GNSS定位层、MQTT客户端层分离
+- **模块化配置**：支持按需启用/禁用功能模块，灵活适应不同应用场景
+- **智能兜底定位**：启动时立即尝试定位，GNSS无效时自动WiFi/LBS定位
 - **智能缓存机制**：减少重复AT指令调用，提高性能
 - **三重定位支持**：GNSS + LBS + WiFi 混合定位，提供更准确的位置信息
 - **完整MQTT客户端**：支持SSL/TLS加密、自动重连、QoS等级、遗嘱消息
@@ -12,6 +14,7 @@ Air780EG是一个功能完整的Arduino库，专为Air780EG 4G+GNSS模块设计�
 - **完整的调试系统**：支持多级别日志输出和时间戳
 - **非阻塞设计**：通过loop()方法实现异步状态更新
 - **丰富的状态信息**：提供详细的网络和定位状态信息
+- **通讯冲突管理**：定位期间合理拒绝其他AT命令，避免串口冲突
 
 ## 支持的功能
 
@@ -95,6 +98,79 @@ your_project/
 - **编译器**：支持C++11标准
 - **内存**：建议至少512KB RAM
 
+## 模块化配置
+
+Air780EG库支持模块化配置，可以根据应用需求灵活启用或禁用功能模块：
+
+### 配置结构
+
+```cpp
+struct Air780EGConfig {
+    // 基础功能
+    bool enableGSM = true;           // 启用GSM/GPRS通讯
+    bool enableMQTT = true;          // 启用MQTT通讯
+    
+    // 定位功能
+    bool enableGNSS = false;         // 启用GNSS定位
+    bool enableFallbackLocation = false; // 启用WiFi/LBS兜底定位
+    
+    // 兜底定位配置
+    unsigned long gnss_timeout = 15000;      // GNSS信号丢失超时时间(ms)
+    unsigned long wifi_interval = 120000;    // WiFi定位间隔(ms)
+    unsigned long lbs_interval = 60000;      // LBS定位间隔(ms)
+    bool prefer_wifi_over_lbs = true;        // 是否优先使用WiFi定位
+};
+```
+
+### 三种工作模式
+
+#### 1. 纯通讯模式
+```cpp
+Air780EGConfig config;
+config.enableGSM = true;
+config.enableMQTT = true;
+config.enableGNSS = false;
+config.enableFallbackLocation = false;
+
+air780eg.begin(&Serial1, 115200, RX_PIN, TX_PIN, EN_PIN, config);
+```
+
+#### 2. 基础定位模式
+```cpp
+Air780EGConfig config;
+config.enableGSM = true;
+config.enableMQTT = true;
+config.enableGNSS = true;
+config.enableFallbackLocation = true;
+config.gnss_timeout = 15000;
+config.wifi_interval = 120000;
+config.lbs_interval = 60000;
+config.prefer_wifi_over_lbs = true;
+
+air780eg.begin(&Serial1, 115200, RX_PIN, TX_PIN, EN_PIN, config);
+```
+
+#### 3. 高级融合模式
+```cpp
+// 基础定位 + IMU惯导修正
+#define ENABLE_IMU_FUSION
+
+Air780EGConfig config;
+config.enableGSM = true;
+config.enableMQTT = true;
+config.enableGNSS = true;
+config.enableFallbackLocation = true;
+
+air780eg.begin(&Serial1, 115200, RX_PIN, TX_PIN, EN_PIN, config);
+```
+
+### 兜底定位特性
+
+- **启动时立即尝试定位**：系统启动后立即检查GNSS状态，如果无效则立即尝试WiFi/LBS定位
+- **智能间隔管理**：避免重复执行定位请求，确保时间戳正确更新
+- **通讯占用处理**：定位期间其他AT命令被合理拒绝，避免串口冲突
+- **自动切换机制**：根据配置优先级自动选择WiFi或LBS定位方式
+
 ## 快速开始
 
 详细的使用说明和配置指南，请参考：[快速开始文档](docs/QuickStart.md)
@@ -121,8 +197,12 @@ your_project/
 
 #### 初始化
 ```cpp
+// 基础初始化（使用默认配置）
 bool begin(HardwareSerial* serial, int baudrate = 115200);
 bool begin(HardwareSerial* serial, int baudrate, int reset_pin, int power_pin = -1);
+
+// 模块化配置初始化（推荐）
+bool begin(HardwareSerial* serial, int baudrate, int rx_pin, int tx_pin, int power_pin, const Air780EGConfig& config);
 ```
 
 #### 主循环
@@ -136,6 +216,17 @@ Air780EGCore& getCore();
 Air780EGNetwork& getNetwork();
 Air780EGGNSS& getGNSS();
 Air780EGMQTT& getMQTT();
+```
+
+#### 配置管理
+```cpp
+// 设置和获取配置
+void setConfig(const Air780EGConfig& config);
+const Air780EGConfig& getConfig() const;
+
+// 循环间隔控制
+void setLoopInterval(unsigned long interval_ms);
+unsigned long getLoopInterval() const;
 ```
 
 ### Air780EGNetwork 网络管理
@@ -192,6 +283,20 @@ String getDate();               // UTC日期
 #### 配置
 ```cpp
 bool enableLBS(bool enable);            // 启用/禁用LBS定位
+```
+
+#### 兜底定位配置
+```cpp
+// 配置兜底定位参数
+void configureFallbackLocation(bool enable, unsigned long gnss_timeout,
+                              unsigned long lbs_interval, unsigned long wifi_interval,
+                              bool prefer_wifi);
+
+// 手动触发兜底定位
+void handleFallbackLocation();
+
+// 检查GNSS信号状态
+bool isGNSSSignalLost();
 ```
 
 ### Air780EGMQTT 客户端

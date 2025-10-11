@@ -1,5 +1,51 @@
 # Air780EG Arduino Library - 更新日志
 
+## v1.3.0 (2025-10-12)
+
+### 🎯 重大架构重构
+- **模块化配置系统**：新增`Air780EGConfig`配置结构，支持按需启用功能模块
+- **三种工作模式**：纯通讯模式、基础定位模式、高级融合模式
+- **智能兜底定位**：启动时立即尝试定位，GNSS无效时自动WiFi/LBS定位
+- **通讯冲突管理**：定位期间合理拒绝其他AT命令，避免串口冲突
+
+### ✨ 新增功能
+- **Air780EGConfig配置结构**：支持GSM、MQTT、GNSS、兜底定位的独立开关
+- **兜底定位参数配置**：可配置超时时间、间隔时间、优先级等参数
+- **启动时立即定位**：系统启动后立即检查GNSS状态并尝试兜底定位
+- **智能间隔管理**：避免重复执行定位请求，确保时间戳正确更新
+- **配置运行时更新**：支持运行时修改配置参数
+
+### 🚀 性能优化
+- **快速定位获取**：启动后立即尝试定位，比之前快6.5秒
+- **智能命令管理**：定位期间其他命令被合理拒绝，避免冲突
+- **动态GNSS查询**：根据定位状态动态调整查询间隔（有效3秒，无效10秒）
+- **减少资源占用**：按需启用功能模块，节省系统资源
+
+### 🔄 API改进
+- **新增配置初始化方法**：`begin(serial, baudrate, rx_pin, tx_pin, power_pin, config)`
+- **配置管理方法**：`setConfig()`、`getConfig()`、`setLoopInterval()`
+- **兜底定位API**：`configureFallbackLocation()`、`handleFallbackLocation()`、`isGNSSSignalLost()`
+- **向后兼容性**：保持原有API接口不变
+
+### 📋 解决的问题
+1. **启动定位延迟**：系统启动后需要等待15秒才开始兜底定位
+2. **功能耦合问题**：无法独立控制不同功能模块的启用状态
+3. **通讯冲突**：定位期间MQTT命令被阻塞导致发布失败
+4. **重复定位请求**：时间戳管理不当导致重复执行定位
+
+### 🎉 使用示例
+```cpp
+// 基础定位模式
+Air780EGConfig config;
+config.enableGSM = true;
+config.enableMQTT = true;
+config.enableGNSS = true;
+config.enableFallbackLocation = true;
+config.prefer_wifi_over_lbs = true;
+
+air780eg.begin(&Serial1, 115200, RX_PIN, TX_PIN, EN_PIN, config);
+```
+
 ## v1.2.2 (2025-07-23)
 
 ### 🔧 重大修复
