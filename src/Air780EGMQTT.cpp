@@ -678,7 +678,7 @@ bool Air780EGMQTT::addScheduledTask(const String &task_name, const String &topic
 
     scheduled_task_count++;
 
-    AIR780EG_LOGI(TAG, "Added scheduled task: %s, topic: %s, interval: %lu ms",
+    AIR780EG_LOGD(TAG, "Added scheduled task: %s, topic: %s, interval: %lu ms",
                   task_name.c_str(), topic.c_str(), interval_ms);
 
     return true;

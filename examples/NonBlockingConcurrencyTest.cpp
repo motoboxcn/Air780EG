@@ -122,7 +122,7 @@ void loop() {
             Serial.println("WiFi location updated successfully:");
             Serial.printf("  Latitude: %.6f\n", air780eg.getGNSS().getLatitude());
             Serial.printf("  Longitude: %.6f\n", air780eg.getGNSS().getLongitude());
-            Serial.printf("  Location Type: %s\n", air780eg.getGNSS().getLocationSource().c_str());
+            Serial.printf("  Location Type: %s\n", air780eg.getGNSS().getLocationType().c_str());
             wifi_location_requested = false;
         } else {
             // WiFi定位还在进行中，不需要重复请求

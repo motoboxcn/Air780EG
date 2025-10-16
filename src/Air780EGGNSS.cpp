@@ -5,7 +5,9 @@ const char *Air780EGGNSS::TAG = "Air780EGGNSS";
 Air780EGGNSS::Air780EGGNSS(Air780EGCore *core_instance) : core(core_instance)
 {
     // 初始化GNSS数据结构
-    gnss_data.is_fixed = false;
+    gnss_data.is_gnss_valid = false;
+    gnss_data.is_wifi_valid = false;
+    gnss_data.is_lbs_valid = false;
     gnss_data.latitude = 0.0;
     gnss_data.longitude = 0.0;
     gnss_data.altitude = 0.0;
@@ -14,7 +16,6 @@ Air780EGGNSS::Air780EGGNSS(Air780EGCore *core_instance) : core(core_instance)
     gnss_data.satellites = 0;
     gnss_data.hdop = 0.0;
     gnss_data.last_update = 0;
-    gnss_data.data_valid = false;
     
     // 初始化GPS时间
     gnss_data.gps_time.year = 0;
@@ -273,21 +274,19 @@ bool Air780EGGNSS::updateWIFILocation()
                 start = i + 1;
             }
         }
-
+        gnss_data.is_wifi_valid = false;
         // 转换并设置数据
         if (latitude.length() > 0 && longitude.length() > 0)
         {
             gnss_data.latitude = latitude.toDouble();
             gnss_data.longitude = longitude.toDouble();
-            gnss_data.data_valid = true;
-            gnss_data.is_fixed = true;
+            gnss_data.is_wifi_valid = true;
             gnss_data.satellites = 0; // WIFI没有卫星信息
             gnss_data.hdop = 0.0;     // WIFI没有HDOP信息
             gnss_data.altitude = 0.0; // WIFI没有海拔信息
             gnss_data.speed = 0.0;    // WIFI没有速度信息
             gnss_data.course = 0.0;   // WIFI没有航向信息
             gnss_data.last_update = millis();
-            gnss_data.location_type = "WIFI";
             AIR780EG_LOGD(TAG, "WIFI data parsed - Lat: %.6f, Lng: %.6f",
                           gnss_data.latitude, gnss_data.longitude);
             AIR780EG_LOGD(TAG, "WiFi定位完成，结果: 成功");
@@ -373,20 +372,19 @@ bool Air780EGGNSS::updateLBS()
                 }
             }
 
+            gnss_data.is_lbs_valid = false;
             // 转换并设置数据
             if (latitude.length() > 0 && longitude.length() > 0)
             {
                 gnss_data.latitude = latitude.toDouble();
                 gnss_data.longitude = longitude.toDouble();
-                gnss_data.data_valid = true;
-                gnss_data.is_fixed = true;
+                gnss_data.is_lbs_valid = true;
                 gnss_data.satellites = 0; // LBS没有卫星信息
                 gnss_data.hdop = 0.0;     // LBS没有HDOP信息
                 gnss_data.altitude = 0.0; // LBS没有海拔信息
                 gnss_data.speed = 0.0;    // LBS没有速度信息
                 gnss_data.course = 0.0;   // LBS没有航向信息
                 gnss_data.last_update = millis();
-                gnss_data.location_type = "LBS";
                 AIR780EG_LOGD(TAG, "LBS data parsed - Lat: %.6f, Lng: %.6f",
                               gnss_data.latitude, gnss_data.longitude);
                 AIR780EG_LOGD(TAG, "LBS定位完成，结果: 成功");
@@ -425,7 +423,7 @@ bool Air780EGGNSS::disableGNSS()
     }
 
     gnss_enabled = false;
-    gnss_data.data_valid = false;
+    gnss_data.is_gnss_valid = false;
 
     AIR780EG_LOGI(TAG, "GNSS disabled");
     return true;
@@ -447,7 +445,7 @@ void Air780EGGNSS::loop()
     unsigned long current_time = millis();
 
     // 根据GNSS状态动态调整查询间隔
-    unsigned long interval = gnss_data.data_valid ? 3000 : 10000; // 有效时3秒，无效时10秒
+    unsigned long interval = gnss_data.is_gnss_valid ? 3000 : 10000; // 有效时3秒，无效时10秒
     
     // 检查是否需要更新GNSS数据
     if (current_time - last_loop_time >= interval)
@@ -456,16 +454,18 @@ void Air780EGGNSS::loop()
         if (gnss_enabled)
         {
             AIR780EG_LOGD(TAG, "GNSS查询间隔: %lu ms (状态: %s)", 
-                         interval, gnss_data.data_valid ? "有效" : "无效");
+                         interval, gnss_data.is_gnss_valid ? "有效" : "无效");
             updateGNSSData();
         }
 
         // 兜底定位逻辑，会导致串口通讯不可用，阻塞 AT 指令；
-        if (fallbackConfig.enabled && gnss_data.data_valid == false)
+        if (fallbackConfig.enabled && gnss_data.is_gnss_valid == false)
         {
+            AIR780EG_LOGD(TAG, "兜底定位启用，开始定位...");
             handleFallbackLocation();
+            AIR780EG_LOGD(TAG, "兜底定位完成");
         }
-        else if (gnss_data.data_valid == false)
+        else if (gnss_data.is_gnss_valid == false)
         {
             AIR780EG_LOGD(TAG, "GNSS signal lost. Manual WiFi/LBS location available if needed.");
         }
@@ -485,17 +485,11 @@ void Air780EGGNSS::updateGNSSData()
         if (parseGNSSResponse(response))
         {
             gnss_data.last_update = millis();
-            // 只有在GNSS真正定位成功时才更新location_type
-            if (gnss_data.is_fixed && gnss_data.data_valid) {
-                gnss_data.location_type = "GNSS";
-            }
-            AIR780EG_LOGD(TAG, "GNSS data updated - Fixed: %s, DataValid: %s, Sats: %d, Lat: %.6f, Lng: %.6f, Type: %s",
-                          gnss_data.is_fixed ? "Yes" : "No",
-                          gnss_data.data_valid ? "Yes" : "No",
-                          gnss_data.satellites,
-                          gnss_data.latitude,
-                          gnss_data.longitude,
-                          gnss_data.location_type.c_str());
+            AIR780EG_LOGD(TAG, "GNSS data updated - is_gnss_valid: %s, satellites: %d, latitude: %.6f, longitude: %.6f",
+                            gnss_data.is_gnss_valid ? "Yes" : "No",
+                            gnss_data.satellites,
+                            gnss_data.latitude,
+                            gnss_data.longitude);
         }
         else
         {
@@ -542,6 +536,8 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
     // 解析逗号分隔的字段
     int field_count = 0;
     int start = 0;
+
+
 
     for (int i = 0; i <= info_line.length(); i++)
     {
@@ -628,12 +624,13 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
         }
     }
 
+    AIR780EG_LOGD(TAG, "temp_data_valid: %d, temp_is_fixed: %d", temp_data_valid, temp_is_fixed);
+
     // 只有在定位成功时才更新位置相关字段
     if (temp_data_valid && temp_is_fixed)
     {
         // 更新所有字段
-        gnss_data.is_fixed = temp_is_fixed;
-        gnss_data.data_valid = temp_data_valid;
+        gnss_data.is_gnss_valid = temp_is_fixed;
         gnss_data.latitude = temp_latitude;
         gnss_data.longitude = temp_longitude;
         gnss_data.altitude = temp_altitude;
@@ -641,36 +638,23 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
         gnss_data.course = temp_course;
         gnss_data.hdop = temp_hdop;
         gnss_data.satellites = temp_satellites;
-        
+
         AIR780EG_LOGD(TAG, "定位成功，更新位置信息 - Lat: %.6f, Lng: %.6f", 
                       gnss_data.latitude, gnss_data.longitude);
     }
     else
     {
         // 定位未成功，只更新状态字段，保留位置信息
-        gnss_data.is_fixed = temp_is_fixed;
-        gnss_data.data_valid = temp_data_valid;
         gnss_data.satellites = temp_satellites;
         gnss_data.hdop = temp_hdop;
-        
-        // 如果之前有有效定位，保留位置信息
-        if (gnss_data.data_valid)
-        {
-            AIR780EG_LOGD(TAG, "定位未成功，保留上次位置信息 - Lat: %.6f, Lng: %.6f", 
-                          gnss_data.latitude, gnss_data.longitude);
-        }
-        else
-        {
-            AIR780EG_LOGD(TAG, "定位未成功，无历史位置信息");
-        }
     }
 
     return field_count >= 12; // 至少解析到卫星数量字段
 }
 
-bool Air780EGGNSS::isFixed()
+bool Air780EGGNSS::isValid()
 {
-    return gnss_data.data_valid && gnss_data.is_fixed;
+    return gnss_data.is_gnss_valid || gnss_data.is_wifi_valid || gnss_data.is_lbs_valid;
 }
 
 double Air780EGGNSS::getLatitude()
@@ -708,6 +692,18 @@ float Air780EGGNSS::getHDOP()
     return gnss_data.hdop;
 }
 
+String Air780EGGNSS::getLocationType()
+{
+    if (gnss_data.is_lbs_valid) {
+        return "LBS";
+    } else if (gnss_data.is_wifi_valid) {
+        return "WIFI";
+    } else if (gnss_data.is_gnss_valid) {
+        return "GNSS";
+    } else {
+        return "Unknown";
+    }
+}
 
 bool Air780EGGNSS::isEnabled() const
 {
@@ -719,11 +715,6 @@ bool Air780EGGNSS::isBlockingCommandActive() const
     return core ? core->isBlockingCommandActive() : false;
 }
 
-bool Air780EGGNSS::isDataValid() const
-{
-    return gnss_data.data_valid;
-}
-
 unsigned long Air780EGGNSS::getLastUpdateTime() const
 {
     return gnss_data.last_update;
@@ -732,8 +723,9 @@ unsigned long Air780EGGNSS::getLastUpdateTime() const
 void Air780EGGNSS::printGNSSInfo()
 {
     AIR780EG_LOGI(TAG, "=== GNSS Information ===");
-    AIR780EG_LOGI(TAG, "Fixed: %s", gnss_data.is_fixed ? "Yes" : "No");
-    AIR780EG_LOGI(TAG, "Location Type: %s", gnss_data.location_type.c_str());
+    AIR780EG_LOGI(TAG, "GNSS Valid: %s", gnss_data.is_gnss_valid ? "Yes" : "No");
+    AIR780EG_LOGI(TAG, "WIFI Valid: %s", gnss_data.is_wifi_valid ? "Yes" : "No");
+    AIR780EG_LOGI(TAG, "LBS Valid: %s", gnss_data.is_lbs_valid ? "Yes" : "No");
     AIR780EG_LOGI(TAG, "Satellites: %d", gnss_data.satellites);
     AIR780EG_LOGI(TAG, "Latitude: %.6f", gnss_data.latitude);
     AIR780EG_LOGI(TAG, "Longitude: %.6f", gnss_data.longitude);
@@ -769,10 +761,10 @@ String Air780EGGNSS::getLocationJSON()
     doc["speed"] = gnss_data.speed;
     doc["course"] = gnss_data.course;
     doc["hdop"] = gnss_data.hdop;
-    doc["location_type"] = gnss_data.location_type;
     doc["satellites"] = gnss_data.satellites;
-    doc["is_fixed"] = gnss_data.is_fixed;
-    doc["data_valid"] = gnss_data.data_valid;
+    doc["is_gnss_valid"] = gnss_data.is_gnss_valid;
+    doc["is_wifi_valid"] = gnss_data.is_wifi_valid;
+    doc["is_lbs_valid"] = gnss_data.is_lbs_valid;
     
     // 添加GPS时间信息
     if (gnss_data.gps_time.valid) {
@@ -784,12 +776,6 @@ String Air780EGGNSS::getLocationJSON()
     }
     
     return doc.as<String>();
-}
-
-// 获取当前位置来源
-String Air780EGGNSS::getLocationSource()
-{
-    return gnss_data.location_type;
 }
 
 // 获取最后定位时间
@@ -826,10 +812,6 @@ void Air780EGGNSS::configureFallbackLocation(bool enable, unsigned long gnss_tim
 
 // 处理兜底定位逻辑
 void Air780EGGNSS::handleFallbackLocation() {
-    if (!fallbackConfig.enabled) {
-        return;
-    }
-    
     unsigned long currentTime = millis();
     
     AIR780EG_LOGD(TAG, "=== 兜底定位检查开始 ===");
@@ -837,7 +819,7 @@ void Air780EGGNSS::handleFallbackLocation() {
                   currentTime, fallbackConfig.last_wifi_time, fallbackConfig.last_lbs_time);
     
     // 检查GNSS信号是否丢失
-    if (!isGNSSSignalLost()) {
+    if (gnss_data.is_gnss_valid) {
         // GNSS信号正常，不需要兜底
         AIR780EG_LOGD(TAG, "GNSS信号正常，跳过兜底定位");
         return;
@@ -920,56 +902,6 @@ void Air780EGGNSS::handleFallbackLocation() {
     }
     
     AIR780EG_LOGD(TAG, "=== 兜底定位检查结束 ===");
-}
-
-// 检查GNSS信号是否丢失
-bool Air780EGGNSS::isGNSSSignalLost() {
-    if (!gnss_enabled) {
-        AIR780EG_LOGD(TAG, "GNSS信号丢失: GNSS功能未启用");
-        return true;
-    }
-    
-    // 检查GNSS数据的时效性
-    unsigned long currentTime = millis();
-    
-    // 如果未定位，认为信号丢失
-    if (!gnss_data.is_fixed) {
-        AIR780EG_LOGD(TAG, "GNSS信号丢失: 未定位 (is_fixed: %d)", gnss_data.is_fixed);
-        return true;
-    }
-    
-    // 如果数据无效但已定位，检查数据时效性
-    if (!gnss_data.data_valid) {
-        unsigned long elapsed = currentTime - gnss_data.last_update;
-        if (elapsed > fallbackConfig.gnss_timeout) {
-            AIR780EG_LOGD(TAG, "GNSS信号丢失: 数据无效且过期 (data_valid: %d, 已过 %lu秒)", 
-                          gnss_data.data_valid, elapsed/1000);
-            return true;
-        } else {
-            AIR780EG_LOGD(TAG, "GNSS信号正常: 已定位但数据无效，仍在超时范围内 (data_valid: %d, 已过 %lu秒)", 
-                          gnss_data.data_valid, elapsed/1000);
-            return false; // 已定位且在超时范围内，认为信号正常
-        }
-    }
-    
-    // 检查数据是否过期（只有在数据有效时才检查）
-    unsigned long elapsed = currentTime - gnss_data.last_update;
-    if (elapsed > fallbackConfig.gnss_timeout) {
-        AIR780EG_LOGD(TAG, "GNSS信号丢失: 数据过期 (已过 %lu秒, 超时: %lu秒)", 
-                      elapsed/1000, fallbackConfig.gnss_timeout/1000);
-        return true;
-    }
-    
-    // 检查定位类型是否为GNSS
-    if (gnss_data.location_type != "GNSS") {
-        AIR780EG_LOGD(TAG, "GNSS信号丢失: 定位类型不是GNSS (当前: %s)", 
-                      gnss_data.location_type.c_str());
-        return true;
-    }
-    
-    AIR780EG_LOGD(TAG, "GNSS信号正常: 类型=%s, 卫星数=%d, 更新时间=%lu秒前", 
-                  gnss_data.location_type.c_str(), gnss_data.satellites, elapsed/1000);
-    return false;
 }
 
 // GPS时间获取方法

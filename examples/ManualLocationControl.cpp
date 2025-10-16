@@ -141,7 +141,7 @@ void displayLocationStatus() {
             Serial.printf("✓ 位置: %.6f, %.6f\n",
                 air780.getGNSS().getLatitude(),
                 air780.getGNSS().getLongitude());
-            Serial.printf("  来源: %s\n", air780.getGNSS().getLocationSource().c_str());
+            Serial.printf("  来源: %s\n", air780.getGNSS().getLocationType().c_str());
             Serial.printf("  卫星: %d颗\n", air780.getGNSS().getSatelliteCount());
             Serial.printf("  更新: %lu秒前\n", 
                 (millis() - air780.getGNSS().getLastLocationTime()) / 1000);
@@ -192,7 +192,7 @@ void handleSerialCommands() {
         else if (cmd == "status") {
             Serial.printf("GNSS固定: %s\n", air780.getGNSS().isFixed() ? "是" : "否");
             Serial.printf("信号丢失: %s\n", air780.getGNSS().isGNSSSignalLost() ? "是" : "否");
-            Serial.printf("位置来源: %s\n", air780.getGNSS().getLocationSource().c_str());
+            Serial.printf("位置来源: %s\n", air780.getGNSS().getLocationType().c_str());
         }
     }
 }

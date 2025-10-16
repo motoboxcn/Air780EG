@@ -187,7 +187,7 @@ void Air780EG::printStatus() {
     }
     
     // 显示GNSS状态
-    if (gnss.isEnabled() && gnss.isDataValid()) {
+    if (gnss.isEnabled() && gnss.isValid()) {
         gnss.printGNSSInfo();
     }
 }

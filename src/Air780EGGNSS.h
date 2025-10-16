@@ -37,7 +37,6 @@ typedef struct
 // 缓存的GNSS数据
 typedef struct
 {
-    bool is_fixed; // 运行状态
     double latitude;
     double longitude;
     double altitude;
@@ -46,10 +45,13 @@ typedef struct
     int satellites;
     float hdop;       // 水平精度因子
     unsigned long last_update;
-    String location_type; // 定位类型：LBS、WIFI、GNSS
-    bool data_valid; // 数据有效性，定位是否获取到
+    bool is_lbs_valid; // LBS数据有效性
+    bool is_wifi_valid; // WiFi数据有效性
+    bool is_gnss_valid; // GNSS数据有效性
     gps_time_t gps_time; // GPS时间信息
 } gnss_data_t;
+
+
 
 class Air780EGGNSS
 {
@@ -100,16 +102,13 @@ public:
                                   unsigned long lbs_interval, unsigned long wifi_interval,
                                   bool prefer_wifi);
     void handleFallbackLocation();
-    bool isGNSSSignalLost();
     
-    // 定位状态查询
-    String getLocationSource(); // 获取当前位置来源 ("GNSS", "WiFi", "LBS")
     unsigned long getLastLocationTime(); // 获取最后定位时间
 
     void loop(); // 定期更新GNSS数据
 
     // 获取缓存的GNSS信息
-    bool isFixed();
+    bool isValid();
     double getLatitude();
     double getLongitude();
     double getAltitude();
@@ -117,6 +116,7 @@ public:
     float getCourse();
     int getSatelliteCount();
     float getHDOP();
+    String getLocationType();
     
     // GPS时间获取
     gps_time_t getGPSTime(); // 获取GPS时间信息
@@ -125,7 +125,6 @@ public:
 
     // 状态查询
     bool isEnabled() const;
-    bool isDataValid() const;
     unsigned long getLastUpdateTime() const;
     bool isBlockingCommandActive() const;  // 检查是否有阻塞命令正在执行
 

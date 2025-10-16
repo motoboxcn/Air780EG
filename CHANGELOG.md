@@ -93,7 +93,7 @@ air780eg.begin(&Serial1, 115200, RX_PIN, TX_PIN, EN_PIN, config);
 - **重大修改**：移除自动WiFi/LBS定位切换功能，避免串口并发冲突
 - **修复**：解决MQTT定时任务延迟问题，确保按时执行
 - **优化**：将定位策略控制权交给用户，提高系统稳定性
-- **新增**：定位状态查询方法 `isGNSSSignalLost()`, `getLocationSource()`, `getLastLocationTime()`
+- **新增**：定位状态查询方法 `isGNSSSignalLost()`, `getLocationType()`, `getLastLocationTime()`
 
 ## v1.2.0 (之前版本)
 - **重大更新**：完善定位功能，支持GNSS+LBS+WiFi三重定位

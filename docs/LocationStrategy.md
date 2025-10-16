@@ -127,7 +127,7 @@ if (isRemoteArea()) {
 ### 状态查询
 ```cpp
 bool isGNSSSignalLost();        // 检查GNSS信号是否丢失
-String getLocationSource();     // 获取位置来源
+String getLocationType();     // 获取位置来源
 unsigned long getLastLocationTime(); // 获取最后定位时间
 ```
 
