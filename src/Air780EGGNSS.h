@@ -42,7 +42,7 @@ typedef struct
     double altitude;
     float speed;  // km/h
     float course; // 度
-    int satellites;
+    int satellites; // 卫星数量
     float hdop;       // 水平精度因子
     unsigned long last_update;
     bool is_lbs_valid; // LBS数据有效性

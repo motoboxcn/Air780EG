@@ -278,6 +278,10 @@ bool Air780EGGNSS::updateWIFILocation()
         // 转换并设置数据
         if (latitude.length() > 0 && longitude.length() > 0)
         {
+            // 清除其他定位方式标志，因为WiFi定位成功
+            gnss_data.is_gnss_valid = false;
+            gnss_data.is_lbs_valid = false;
+            
             gnss_data.latitude = latitude.toDouble();
             gnss_data.longitude = longitude.toDouble();
             gnss_data.is_wifi_valid = true;
@@ -376,6 +380,10 @@ bool Air780EGGNSS::updateLBS()
             // 转换并设置数据
             if (latitude.length() > 0 && longitude.length() > 0)
             {
+                // 清除其他定位方式标志，因为LBS定位成功
+                gnss_data.is_gnss_valid = false;
+                gnss_data.is_wifi_valid = false;
+                
                 gnss_data.latitude = latitude.toDouble();
                 gnss_data.longitude = longitude.toDouble();
                 gnss_data.is_lbs_valid = true;
@@ -626,9 +634,17 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
 
     AIR780EG_LOGD(TAG, "temp_data_valid: %d, temp_is_fixed: %d", temp_data_valid, temp_is_fixed);
 
+    // 更新卫星数量和HDOP信息（这些信息总是有效的）
+    gnss_data.satellites = temp_satellites;
+    gnss_data.hdop = temp_hdop;
+    
     // 只有在定位成功时才更新位置相关字段
     if (temp_data_valid && temp_is_fixed)
     {
+        // 清除兜底定位标志，因为GNSS定位成功
+        gnss_data.is_wifi_valid = false;
+        gnss_data.is_lbs_valid = false;
+        
         // 更新所有字段
         gnss_data.is_gnss_valid = temp_is_fixed;
         gnss_data.latitude = temp_latitude;
@@ -636,17 +652,14 @@ bool Air780EGGNSS::parseGNSSResponse(const String &response)
         gnss_data.altitude = temp_altitude;
         gnss_data.speed = temp_speed;
         gnss_data.course = temp_course;
-        gnss_data.hdop = temp_hdop;
-        gnss_data.satellites = temp_satellites;
 
         AIR780EG_LOGD(TAG, "定位成功，更新位置信息 - Lat: %.6f, Lng: %.6f", 
                       gnss_data.latitude, gnss_data.longitude);
     }
     else
     {
-        // 定位未成功，只更新状态字段，保留位置信息
-        gnss_data.satellites = temp_satellites;
-        gnss_data.hdop = temp_hdop;
+        // 定位未成功，保留位置信息，但标记GNSS为无效
+        gnss_data.is_gnss_valid = false;
     }
 
     return field_count >= 12; // 至少解析到卫星数量字段
